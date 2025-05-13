@@ -1,0 +1,843 @@
+---
+title: "Annotate Broad Cell Types"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+
+
+
+## Libraries
+
+
+```{r load-libraries}
+library(tidyverse)
+library(Seurat)
+library(pheatmap)
+library(colorspace)
+library(cowplot)
+```
+
+
+
+
+## other bits
+
+```{r run-time-tibble}
+process_time <- tibble()
+stop_the_clock <- function(chunk_name = "unnamed") {
+    temp <- tibble::tibble(Code_chunk = chunk_name,
+                           Start_time = start_time,
+                           Stop_time = Sys.time(),
+                           Run_time = difftime(Stop_time, Start_time, units = "mins")
+                           )
+    process_time <- dplyr::bind_rows(process_time, temp)
+    return(process_time)
+}
+```
+
+
+
+
+
+## Data
+
+```{r load-data}
+start_time <- Sys.time()
+if (remove_doublets == FALSE && remove_ambient == FALSE) {
+    path_modifier <- ""
+}
+if (remove_doublets == TRUE && remove_ambient == FALSE) {
+    path_modifier <- "_doublets_removed"
+}
+if (remove_doublets == FALSE && remove_ambient == TRUE) {
+    path_modifier <- "_ambient_removed"
+}
+if (remove_doublets == TRUE && remove_ambient == TRUE) {
+    path_modifier <- "_doublets_removed_ambient_removed"
+}
+
+
+
+core_object_path <- paste0(objects_path,
+                                  dataset, "_",
+                                  input_type, "_",
+                                  normalization, "_",
+                                  integration, "_")
+diet_object <- paste0(core_object_path, "integrated_seurat", path_modifier, "_diet.rds")
+regular_object <- paste0(core_object_path, "integrated_seurat", path_modifier, ".rds")
+if (file.exists(diet_object)) {
+   object_to_load <- diet_object
+} else {
+    object_to_load <- regular_object
+}
+integrated <- read_rds(file = object_to_load)
+pt_size <- 4 * AutoPointSize(data = integrated, raster = FALSE)
+integrated
+
+
+process_time <- stop_the_clock("load_data")
+```
+
+
+
+# Define Markers
+
+
+
+## Cell types and Markers
+
+```{r load-markers}
+start_time <- Sys.time()
+marker_df <- read_tsv(gmt_file_path, col_names = FALSE) %>%
+    select(-X2) %>%
+    gather("index", "gene", -X1) %>%
+    select(-index) %>%
+    rename(celltype = X1) %>%
+    drop_na() %>%
+    group_by(celltype) %>%
+    arrange(celltype)
+marker_df
+process_time <- stop_the_clock("load_markers")
+```
+
+
+```{r genes-present}
+all_genes <- integrated@assays[["RNA"]]@counts@Dimnames[[1]]
+genes_not_found <- marker_df %>%
+    filter(!gene %in% all_genes) %>%
+    pull(gene)
+if (length(genes_not_found) > 0) {
+    warning(paste0("The following genes were not found: ", genes_not_found))
+    marker_df <- marker_df %>%
+        filter(gene %in% all_genes)
+} else {
+    message(paste0("All genes present in data."))
+}
+```
+
+
+
+
+## AddModuleScore
+
+
+```{r add-modulescore}
+start_time <- Sys.time()
+
+if (integration == "cca") {
+    assay_use <- "integrated"
+} else if (normalization == "SCT") {
+    assay_use <- "SCT"
+} else {
+    assay_use <- "RNA"
+}
+
+for (my_celltype in unique(marker_df$celltype)) {
+    markers <- marker_df %>% filter(celltype == my_celltype) %>% pull(gene)
+    integrated <- AddModuleScore(object = integrated,
+                                 features = list(markers),
+                                 name = paste0("modulescore_", my_celltype),
+                                 assay = assay_use,
+                                 ctrl = n_crt_features,
+                                 seed = 12021)
+}
+process_time <- stop_the_clock("add_modulescore")
+```
+
+
+
+## Normalize Module Score
+
+To compare across module scores, we take the l2-norm of all the module scores.
+
+```{r l2norm}
+start_time <- Sys.time()
+l2norm <- function(x) {
+    x / sqrt(sum(x^2))
+}
+module_scores <- colnames(integrated@meta.data) %>% str_subset("modulescore") %>% str_subset("_l2norm", negate = TRUE)
+for (i in seq_along(module_scores)) {
+    if (sum(integrated@meta.data[[module_scores[[i]]]]) != 0) {
+        integrated <- AddMetaData(object = integrated,
+                                  metadata = l2norm(integrated@meta.data[[module_scores[[i]]]]),
+                                  col.name = paste0(module_scores[[i]], "_l2norm"))
+    } else {
+        integrated <- AddMetaData(object = integrated,
+                              metadata = 0,
+                              col.name = paste0(module_scores[[i]], "_l2norm"))
+    }
+}
+process_time <- stop_the_clock("l2norm")
+```
+
+
+
+
+## Threshold Module Score
+
+```{r kmeans-threshold}
+start_time <- Sys.time()
+k_means_thresholds_list <- list()
+for (my_celltype in unique(marker_df$celltype)) {
+    module_scores_norm <- paste0("modulescore_", my_celltype, "1_l2norm")
+    temp <- data.frame(ModuleScore = integrated@meta.data[[module_scores_norm]])
+    tryCatch({
+        km <- kmeans(temp$ModuleScore, centers = my_k, iter.max = my_k_itr)
+        temp$clust <- as.factor(km$cluster)
+        k_thresh <- temp %>%
+                    group_by(clust) %>%
+                    summarise(min = min(ModuleScore),
+                              max = max(ModuleScore)) %>%
+                    gather("bound", "value", -clust) %>%
+                    # ungroup() %>%
+                    arrange(value) %>%
+                    pull(value) %>%
+                    .[my_k * 2 - 1]
+    } , error = function(e) {
+            message(paste0(e))
+            message("Setting k_thresh to 0 ... \n\n")
+            k_thresh <<- 0
+    })
+    k_means_thresholds_list[[my_celltype]] <- tibble(Celltype = my_celltype,
+                                                     K_thresh = k_thresh)
+}
+k_means_thresholds <- bind_rows(k_means_thresholds_list)
+k_means_thresholds
+process_time <- stop_the_clock("kmeans_threshold")
+```
+
+
+## Plot Module Scores
+
+### Define plot function
+
+```{r plot-function}
+start_time <- Sys.time()
+plot_module_thresh_kmeans <- function(object, celltype, thresh_table) {
+    my_module <- paste0("modulescore_", celltype, "1")
+    my_module_norm <- paste0(my_module, "_l2norm")
+
+    p1 <- Seurat::FeaturePlot(object = object,
+               features = my_module,
+               reduction = paste0("umap_", curr_pc, "pcs"),
+               cols = c("lightsteelblue2", "black"),
+               pt.size = min(4, pt_size),
+               order = TRUE,
+               raster = FALSE
+               ) +
+      Seurat::NoAxes() +
+      ggplot2::coord_fixed()
+    p2 <- Seurat::FeaturePlot(object = object,
+               features = my_module_norm,
+               reduction = paste0("umap_", curr_pc, "pcs"),
+               cols = c("lightsteelblue2", "black"),
+               pt.size = min(4, pt_size),
+               order = TRUE,
+               raster = FALSE
+               ) +
+      Seurat::NoAxes() +
+      ggplot2::coord_fixed()
+
+    k_thresh <- thresh_table %>%
+        filter(celltype == Celltype) %>%
+        dplyr::pull(K_thresh)
+
+    my_label <- paste0("\nk-", my_k, " slpit = ", round(x = k_thresh, digits = 4), "    ")
+    p3 <- data.frame(ModuleScore = object@meta.data[[my_module_norm]]) %>%
+            ggplot2::ggplot(aes(x = ModuleScore)) +
+                ggplot2::geom_histogram(aes(y = 100 * ..count.. / sum(..count..)),
+                             fill = "lightsteelblue2",
+                             position = "stack",
+                             bins = 60,
+                             show.legend = FALSE) +
+                ggplot2::geom_vline(aes(xintercept = k_thresh), linetype = "dotted", size = 1, colour = "black") +
+                ggplot2::ylab("Percent") +
+                ggplot2::annotate("text", x = Inf, y = Inf, label = my_label, vjust = 1, hjust = 1, size = 4) +
+                ggplot2::theme(plot.margin = ggplot2::unit(c(30, 30, 30, 30), "pt"))
+
+    cells_highlight <- as.data.frame(integrated@meta.data) %>%
+                            tibble::rownames_to_column("cellid") %>%
+                            dplyr::select(cellid, my_module_norm) %>%
+                            dplyr::filter(.[2] > k_thresh &  .[2] > 0) %>%
+                            dplyr::pull(cellid)
+    p4 <- Seurat::DimPlot(object = integrated,
+            reduction = paste0("umap_", curr_pc, "pcs"),
+            pt.size = min(4, pt_size),
+            label = FALSE,
+            cells.highlight = cells_highlight,
+            cols.highlight = "black",
+            sizes.highlight = 0.1,
+            cols = "lightsteelblue2",
+            na.value = "lightsteelblue2",
+            raster = FALSE
+            ) +
+        ggplot2::ggtitle(paste0(celltype, "?")) +
+        Seurat::NoAxes() +
+        Seurat::NoLegend() +
+        ggplot2::coord_fixed()
+
+    p_all <- plot_grid(p1, p2, p3, p4, ncol = 2)
+    title <- ggdraw() + draw_label(celltype, fontface = "bold", x = 0, hjust = 0, vjust = -0.1, size = 20)
+    plot_grid(title, p_all, ncol = 1, rel_heights = c(0.1, 1))
+}
+process_time <- stop_the_clock("plot_function")
+```
+
+
+
+### Plot the module scores
+
+```{r plot-modulescores, fig.width = 10, fig.height = 10}
+start_time <- Sys.time()
+for (my_celltype in unique(marker_df$celltype)) {
+    cat(paste0("\n", my_celltype))
+    print(plot_module_thresh_kmeans(object = integrated, celltype = my_celltype, thresh_table = k_means_thresholds))
+}
+process_time <- stop_the_clock("plot_modulescores")
+```
+
+
+
+
+## Plot Clusters
+
+For these course annotations, we want to keep the cluster resolution low and keep the cell types broad.
+
+```{r plot-curr-res-label, fig.width = 10, fig.height = 10}
+start_time <- Sys.time()
+
+if (integration == "cca") {
+    default_assay <- "integrated"
+} else {
+    if (normalization == "SCT") {
+        default_assay <- "SCT"
+    }
+    if (normalization == "LogNormalize") {
+        default_assay <- "RNA"
+    }
+}
+graph_name <- paste0(default_assay, "_snn")
+
+curr_res_label <- paste0(graph_name, "_res.", curr_res)
+DefaultAssay(object = integrated) <- default_assay
+DefaultAssay(object = integrated)
+
+
+DimPlot(object = integrated,
+        reduction = paste0("umap_", curr_pc, "pcs"),
+        group.by = curr_res_label,
+        pt.size = min(4, pt_size),
+        raster = FALSE,
+        label = TRUE,
+        label.box = TRUE,
+        repel = FALSE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+process_time <- stop_the_clock("plot_curr_res_label")
+```
+
+
+
+# Annotate Cells
+
+
+## Max Module Score
+
+### Extract Module Scores
+
+```{r extract-module-scores}
+start_time <- Sys.time()
+old_colnames <- colnames(as.data.frame(integrated@meta.data)) %>% str_subset("_l2norm")
+new_colnames <- old_colnames %>% str_remove("modulescore_") %>% str_remove("1_l2norm")
+
+module_score_df <- as.data.frame(integrated@meta.data) %>%
+    select(contains("_l2norm"))
+colnames(module_score_df) <- new_colnames
+head(module_score_df)
+process_time <- stop_the_clock("extract_module_scores")
+```
+
+### Annotate
+
+```{r annotate-by-cell}
+start_time <- Sys.time()
+annotation_broad_df <- module_score_df %>%
+  select(annotation_cell_type)
+top_annotation_broad <- colnames(annotation_broad_df)[max.col(annotation_broad_df, ties.method = "first")]
+my_colnames <- colnames(annotation_broad_df)
+annotation_broad_df <- annotation_broad_df %>%
+    mutate(max_value = pmax(!!!rlang::syms(my_colnames)),
+           broad = top_annotation_broad
+           ) %>%
+    rownames_to_column("cell_id")
+
+if (manual_thresh) {
+    k_means_thresholds <- tibble(CellType = annotation_cell_type,
+                                 K_thresh = manual_thresholds)
+}
+annotation_broad_df <- annotation_broad_df %>%
+    left_join(k_means_thresholds, by = c("broad" = "Celltype"))
+
+if (annotate_by_K) {
+    annotation_broad_df <- annotation_broad_df %>%
+        mutate(broad = if_else(max_value > K_thresh & max_value > 0, broad, "unknown"))
+} else {
+    annotation_broad_df <- annotation_broad_df %>%
+        mutate(broad = if_else(max_value > 0, broad, "unknown"))
+}
+annotation_broad_df[annotation_broad_df == "unknown"] <- NA
+head(annotation_broad_df)
+process_time <- stop_the_clock("annotate_by_cell")
+```
+
+
+
+## Plot Annotations
+
+
+```{r plot-annotation, fig.width = 10, fig.height = 10}
+start_time <- Sys.time()
+integrated <- AddMetaData(integrated, metadata = annotation_broad_df$broad, col.name = "annotation_broad_cell_type")
+DimPlot(object = integrated,
+        reduction = paste0("umap_", curr_pc, "pcs"),
+        group.by = "annotation_broad_cell_type",
+        pt.size = min(4, pt_size),
+        raster = FALSE) +
+    NoAxes() +
+    coord_fixed()
+process_time <- stop_the_clock("plot_annotation")
+```
+
+
+## Cluster contributions
+
+Look at the relative cluster-wise contributions of the annotations.
+
+```{r fig.width = 10, fig.height = 5}
+tibble(clust = integrated@meta.data[[curr_res_label]],
+        annotation = integrated@meta.data[["annotation_broad_cell_type"]]) %>%
+        ggplot(aes(x = clust, fill = annotation)) +
+            geom_bar(position = "fill", width = 1, colour = "white", size = 0.4) +
+            # scale_fill_manual(values = colorspace::qualitative_hcl(n = 7,palette = "Set 2"),na.value = "azure3") +
+            # scale_fill_manual(values = scales::hue_pal()(length(unique(integrated$annotation_broad_cell_type))-1),
+            #                   na.value = "grey80") +
+            scale_y_continuous(labels = scales::percent) +
+            ggtitle(paste0("Annotation cluster contribution")) +
+            labs(x = "Clusters", y = "Percent of Cells") +
+            theme(#axis.text.x = element_blank(),
+                  axis.ticks.x = element_blank(),
+                  legend.title = element_blank(),
+                  legend.position = "bottom",
+                  plot.title = element_text(face = "bold"))
+```
+
+
+### Donut Chart
+
+```{r plot-ann-pie, fig.width = 6, fig.height = 6}
+ann_use <- "annotation_broad_cell_type"
+tibble(Annotations = integrated@meta.data[[ann_use]]) %>%
+    group_by(Annotations) %>%
+    dplyr::summarise(count = n()) %>%
+    ggplot(aes(x = 1, y = count, fill = Annotations)) +
+        geom_bar(width = 1, stat = "identity", colour = "white", size = 1) +
+        coord_polar("y", direction = 1) +
+        xlim(c(-0.5, 1.5)) +
+        ggtitle(ann_use) +
+        theme_void() +
+        theme(legend.title = element_blank(),
+            axis.title = element_blank(),
+            axis.ticks = element_blank(),
+            plot.title = element_text(face = "bold"))
+```
+
+
+
+
+<!-- ## Avg. Module Score -->
+
+
+<!-- ### Calculate Avg. Module Score -->
+
+<!-- ```{r avg-modulescore} -->
+<!-- start_time <- Sys.time() -->
+<!-- avg_module_score <- as.data.frame(integrated@meta.data) %>% -->
+<!--     select(all_of(curr_res_label), contains("_l2norm")) %>% -->
+<!--     select(all_of(curr_res_label), contains(annotation_cell_type, ignore.case = FALSE)) %>% -->
+<!--     group_by(.[1]) %>% -->
+<!--     gather("Module", "Score", -curr_res_label) %>% -->
+<!--     group_by(.[1], Module) %>% -->
+<!--     summarise(avg_score = mean(Score)) %>% -->
+<!--     mutate(Module = Module %>% str_remove("modulescore_") %>% str_remove("1_l2norm")) -->
+<!-- head(avg_module_score) -->
+<!-- process_time <- stop_the_clock("avg_modulescore") -->
+<!-- ``` -->
+
+<!-- #### List Avg. Module Score -->
+
+<!-- ```{r list-scores} -->
+<!-- start_time <- Sys.time() -->
+<!-- avg_module_score %>% -->
+<!--     spread("Module", "avg_score") %>% -->
+<!--     column_to_rownames(var = curr_res_label) -->
+<!-- process_time <- stop_the_clock("list_scores") -->
+<!-- ``` -->
+
+<!-- #### Plot Avg. Module Score -->
+
+<!-- ```{r plot-heatmap, fig.width = 8, fig.height = 3} -->
+<!-- start_time <- Sys.time() -->
+<!-- avg_module_score %>% -->
+<!--     spread("Module", "avg_score") %>% -->
+<!--     column_to_rownames(var = curr_res_label) %>% -->
+<!--     t() %>% -->
+<!--     pheatmap::pheatmap(., -->
+<!--          breaks = seq(-0.01, 0.01, 0.0005), -->
+<!--          color = colorspace::diverging_hcl(40, "Blue-Red 3"), -->
+<!--          border_color = NA, -->
+<!--          cluster_rows = TRUE, -->
+<!--          cluster_cols = TRUE, -->
+<!--          angle_col = 90) -->
+<!-- process_time <- stop_the_clock("plot_heatmap") -->
+<!-- ``` -->
+
+<!-- ### Annotate clusters -->
+
+<!-- ```{r annotate-clusters} -->
+<!-- start_time <- Sys.time() -->
+<!-- annotation_broad_df <- avg_module_score %>% -->
+<!--    spread("Module", "avg_score") %>% -->
+<!--     column_to_rownames(var = curr_res_label) -->
+<!-- top_annotation_broad <- colnames(annotation_broad_df)[max.col(annotation_broad_df, ties.method = "first")] -->
+<!-- my_colnames <- colnames(annotation_broad_df) -->
+<!-- annotation_broad_df <- annotation_broad_df %>% -->
+<!--     mutate(max_value = pmax(!!!rlang::syms(my_colnames)), -->
+<!--            broad = top_annotation_broad -->
+<!--            ) %>% -->
+<!--     rownames_to_column(var = curr_res_label) -->
+
+<!-- if (manual_thresh) { -->
+<!--     k_means_thresholds <- tibble(CellType = annotation_cell_type, -->
+<!--                                  K_thresh = manual_thresholds) -->
+<!-- } -->
+<!-- annotation_broad_df <- annotation_broad_df %>% -->
+<!--     left_join(k_means_thresholds, by = c("broad" = "Celltype")) -->
+
+<!-- if (annotate_by_K) { -->
+<!--     annotation_broad_df <- annotation_broad_df %>% -->
+<!--         mutate(broad = if_else(max_value > K_thresh, broad, "unknown")) -->
+<!-- } else { -->
+<!--     annotation_broad_df <- annotation_broad_df %>% -->
+<!--         mutate(broad = if_else(max_value > 0, broad, "unknown")) -->
+<!-- } -->
+<!-- annotation_broad_df[annotation_broad_df == "unknown"] <- NA -->
+<!-- head(annotation_broad_df) -->
+<!-- process_time <- stop_the_clock("annotate_clusters") -->
+<!-- ``` -->
+
+
+
+<!-- ### Get labels per cell -->
+
+<!-- ```{r get-per-cell-label} -->
+<!-- start_time <- Sys.time() -->
+<!-- manual_annotation_avg_by_cell <- as.data.frame(integrated@meta.data) %>% -->
+<!--     rownames_to_column("cell_id") %>% -->
+<!--     select(cell_id, all_of(curr_res_label)) %>% -->
+<!--     left_join(annotation_broad_df) -->
+<!-- head(manual_annotation_avg_by_cell) -->
+<!-- process_time <- stop_the_clock("get_per_cell_label") -->
+<!-- ``` -->
+
+
+<!-- ### Annotate and Plot -->
+
+<!-- ```{r plot-annotation-avg, fig.width = 10, fig.height = 10} -->
+<!-- start_time <- Sys.time() -->
+<!-- integrated <- AddMetaData(integrated, metadata = manual_annotation_avg_by_cell$broad, col.name = "annotation_broad_cell_type_avg") -->
+<!-- DimPlot(object = integrated, -->
+<!--         reduction = paste0("umap_", curr_pc, "pcs"), -->
+<!--         group.by = "annotation_broad_cell_type_avg", -->
+<!--         pt.size = min(4, pt_size), -->
+<!--         raster = FALSE) + -->
+<!--     NoAxes() + -->
+<!--     coord_fixed() -->
+<!-- process_time <- stop_the_clock("plot_annotation_avg") -->
+<!-- ``` -->
+
+<!-- ### Donut chart -->
+
+<!-- ```{r plot-ann-pie-2, fig.width = 6, fig.height = 6} -->
+<!-- ann_use <- "annotation_broad_cell_type_avg" -->
+<!-- tibble(Annotations = integrated@meta.data[[ann_use]]) %>% -->
+<!--     group_by(Annotations) %>% -->
+<!--     dplyr::summarise(count = n()) %>% -->
+<!--     ggplot(aes(x = 1, y = count, fill = Annotations)) + -->
+<!--         geom_bar(width = 1, stat = "identity", colour = "white", size = 1) + -->
+<!--         coord_polar("y", direction = 1) + -->
+<!--         xlim(c(-0.5, 1.5)) + -->
+<!--         ggtitle(ann_use) + -->
+<!--         theme_void() + -->
+<!--         theme(legend.title = element_blank(), -->
+<!--             axis.title = element_blank(), -->
+<!--             axis.ticks = element_blank(), -->
+<!--             plot.title = element_text(face = "bold")) -->
+<!-- ``` -->
+
+
+
+## Extrapolating most common
+
+### Find most common annotation
+
+```{r get-top-ann}
+start_time <- Sys.time()
+cluster_level_ann <- as.data.frame(integrated@meta.data) %>%
+    select(contains(curr_res_label), annotation_broad_cell_type) %>%
+    group_by(.[1]) %>%
+    table() %>%
+    as.data.frame() %>%
+    group_by(.[1]) %>%
+    arrange(.[1], desc(Freq)) %>%
+    mutate(Perc = 100 * Freq / sum(Freq)) %>%
+    slice(1)
+head(cluster_level_ann)
+process_time <- stop_the_clock("get_top_ann")
+```
+
+
+
+### Get labels per cell
+
+```{r top-ann-by-cell}
+start_time <- Sys.time()
+cluster_level_ann_by_cell <- as.data.frame(integrated@meta.data) %>%
+    rownames_to_column("cell_id") %>%
+    select(cell_id, contains(curr_res_label)) %>%
+    mutate(RNA_snn_res.20 = as.factor(RNA_snn_res.20)) %>%
+    left_join(cluster_level_ann)
+head(cluster_level_ann_by_cell)
+process_time <- stop_the_clock("top_ann_by_cell")
+```
+
+
+
+### Annotate and Plot
+
+```{r plot-annotation-ext, fig.width = 10, fig.height = 10}
+start_time <- Sys.time()
+integrated <- AddMetaData(object = integrated,
+                          metadata = cluster_level_ann_by_cell$annotation_broad_cell_type,
+                          col.name = "annotation_broad_cell_type_ext")
+DimPlot(object = integrated,
+        reduction = paste0("umap_", curr_pc, "pcs"),
+        group.by = "annotation_broad_cell_type_ext",
+        pt.size = min(4, pt_size),
+        raster = FALSE) +
+    NoAxes() +
+    coord_fixed()
+process_time <- stop_the_clock("plot_annotation_ext")
+```
+
+
+### Donut chart
+
+```{r plot-ann-pie-3, fig.width = 6, fig.height = 6}
+ann_use <- "annotation_broad_cell_type_ext"
+tibble(Annotations = integrated@meta.data[[ann_use]]) %>%
+    group_by(Annotations) %>%
+    dplyr::summarise(count = n()) %>%
+    ggplot(aes(x = 1, y = count, fill = Annotations)) +
+        geom_bar(width = 1, stat = "identity", colour = "white", size = 1) +
+        coord_polar("y", direction = 1) +
+        xlim(c(-0.5, 1.5)) +
+        ggtitle(ann_use) +
+        theme_void() +
+        theme(legend.title = element_blank(),
+            axis.title = element_blank(),
+            axis.ticks = element_blank(),
+            plot.title = element_text(face = "bold"))
+```
+
+
+
+# Save data
+
+```{r save-data}
+start_time <- Sys.time()
+write_rds(x = integrated, file = object_to_load)
+process_time <- stop_the_clock("save_data")
+```
+
+
+```{r}
+modulescores <- colnames(integrated@meta.data) %>% str_subset("modulescore")
+annotations_metadata <- FetchData(object = integrated, 
+                                  vars = c("experiment",
+                                           all_of(modulescores),
+                                           "annotation_broad_cell_type",
+                                           "annotation_broad_cell_type_ext")
+                                  ) %>% 
+    rownames_to_column("cell_id")
+
+write_csv(x = annotations_metadata,
+          file = paste0(objects_path,
+                        dataset, "_",
+                        input_type, "_",
+                        normalization, "_",
+                        integration, "_",
+                        "integrated_seurat", 
+                        path_modifier,
+                        "_annotations.csv")
+          )
+```
+
+
+
+
+
+
+
+
+# Run time
+
+```{r run-times}
+process_time
+```
+
+```{r plot-run-times, fig.width = 10, fig.height = 8}
+process_time$Code_chunk <- factor(process_time$Code_chunk, levels = rev(process_time$Code_chunk))
+process_time %>%
+    ggplot(aes(x = Code_chunk, y = Run_time, fill = Run_time)) +
+    geom_col(width = 0.8) +
+    xlab("Code Chunk") +
+    ylab("Run Time (mins)") +
+    coord_flip()
+```
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (job_id != "local") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

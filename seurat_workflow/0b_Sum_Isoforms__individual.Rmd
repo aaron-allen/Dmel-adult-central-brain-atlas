@@ -1,0 +1,259 @@
+---
+title: "Sum isoforms from custom gtf"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())    # base_family = "Arial"))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+if (is.na(params_file)) {
+    params_file <- "pipeline_R_params.R"
+}
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+Get the name of the machine that this is running on.  If running on my local desktop ("mentok"), then append to the `raw_path` variable.
+
+```{r is-local}
+local_path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if (curr_machine == "mentok") {
+    local_path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+local_path_mod
+```
+
+```{r adjust-path}
+raw_path <- paste0(local_path_mod, raw_path)
+raw_path
+```
+
+```{r}
+my_sample <- commandArgs(trailingOnly = TRUE)[4]
+my_sample
+```
+
+
+
+## Load packages
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Matrix)
+library(R.utils)
+library(tidyverse)
+```
+
+
+## Functions
+
+
+```{r backup-func}
+backup_data <- function(input_dir, input_sample) {
+    backup_dir <- paste0(dirname(raw_path), "/backup--pre_iso_sum--", format(Sys.time(), "%Y%m%d_%H"), "0000--", basename(raw_path), "/")
+    dir.create(backup_dir, showWarnings = FALSE)
+    file.copy(paste0(input_dir, my_sample), backup_dir, recursive = TRUE)
+}
+```
+
+
+```{r sum-func, message = FALSE, warning = FALSE}
+sum_isoform <- function(input_dir, input_sample, filtered_data = TRUE) {
+    if (filtered_data) {
+      input_file <- "/alevin/filtered_cellranger_output/matrix.mtx.gz"
+      output_file <- "/alevin/filtered_cellranger_output/matrix.mtx"
+      input_file_genes <- "/alevin/filtered_cellranger_output/features.tsv.gz"
+      output_file_genes <- "/alevin/filtered_cellranger_output/features.tsv.gz"
+    } else {
+      input_file <- "/alevin/raw_cellranger_output/matrix.mtx.gz"
+      output_file <- "/alevin/raw_cellranger_output/matrix.mtx"
+      input_file_genes <- "/alevin/raw_cellranger_output/features.tsv.gz"
+      output_file_genes <- "/alevin/raw_cellranger_output/features.tsv.gz"
+    }
+
+    message(paste0("Loading sample: ", input_sample))
+    genes <- readr::read_tsv(file = paste0(input_dir, input_sample, input_file_genes), col_names = FALSE)
+
+    if (!"fruCOM" %in% genes$X1) {
+        message("  Summing isoforms ...")
+        temp_mat <- readMM(paste0(input_dir, input_sample, input_file))
+        dsx <- temp_mat[3, ] +
+            temp_mat[4, ] +
+            temp_mat[5, ]
+        fru <- temp_mat[6, ] +
+            temp_mat[7, ] +
+            temp_mat[8, ] +
+            temp_mat[9, ] +
+            temp_mat[10, ] +
+            temp_mat[14, ] +
+            temp_mat[15, ] +
+            temp_mat[16, ]
+        fru_plus <- temp_mat[6, ] +
+            temp_mat[7, ] +
+            temp_mat[8, ] +
+            temp_mat[9, ] +
+            temp_mat[10, ] +
+            temp_mat[11, ] +
+            temp_mat[12, ] +
+            temp_mat[13, ] +
+            temp_mat[14, ] +
+            temp_mat[15, ] +
+            temp_mat[16, ]
+        fru_dP1 <- temp_mat[6, ] +
+            temp_mat[7, ] +
+            temp_mat[8, ] +
+            temp_mat[9, ] +
+            temp_mat[10, ] +
+            temp_mat[16, ]
+        fru_dP1_plus <- temp_mat[6, ] +
+            temp_mat[7, ] +
+            temp_mat[8, ] +
+            temp_mat[9, ] +
+            temp_mat[10, ] +
+            temp_mat[11, ] +
+            temp_mat[12, ] +
+            temp_mat[13, ] +
+            temp_mat[16, ]
+        temp_mat <- rbind(fru, fru_plus, fru_dP1, fru_dP1_plus, dsx, temp_mat)
+
+        writeMM(obj = temp_mat, file = paste0(input_dir, input_sample, output_file))
+        if (file.exists(paste0(input_dir, input_sample, output_file))) {
+            file.remove(paste0(input_dir, input_sample, input_file))
+        }
+        gzip(filename = paste0(input_dir, input_sample, output_file),
+             destname = paste0(input_dir, input_sample, input_file),
+             remove = TRUE
+             )
+
+        genes$X1[genes$X1 == "dsx"] <- "dsxCOM"
+        genes$X2[genes$X2 == "dsx"] <- "dsxCOM"
+        genes$X1[genes$X1 == "fru"] <- "fruCOM"
+        genes$X2[genes$X2 == "fru"] <- "fruCOM"
+        genes_fru <- c("fru", "fru", "Gene Expression")
+        genes_fru_plus <- c("fru_plus", "fru_plus", "Gene Expression")
+        genes_fru_dP1 <- c("fru_dP1", "fru_dP1", "Gene Expression")
+        genes_fru_dP1_plus <- c("fru_dP1_plus", "fru_dP1_plus", "Gene Expression")
+        genes_dsx <- c("dsx", "dsx", "Gene Expression")
+        genes <- rbind(genes_fru, genes_fru_plus, genes_fru_dP1, genes_fru_dP1_plus, genes_dsx, genes)
+        readr::write_tsv(x = genes, file = paste0(input_dir, input_sample, output_file_genes), col_names = FALSE)
+    } else {
+        message("  Data already summed !!")
+    }
+}
+```
+
+
+
+
+# Backup
+
+
+```{r backup}
+backup_data(input_dir = raw_path, input_sample = my_sample)
+```
+
+
+
+# Sum up the isoform info
+
+```{r sum}
+sum_isoform(input_dir = raw_path, input_sample = my_sample, filtered_data = TRUE)
+sum_isoform(input_dir = raw_path, input_sample = my_sample, filtered_data = FALSE)
+```
+
+
+
+
+
+## Run time
+
+```{r run-time}
+end_time <- Sys.time()
+end_time
+end_time - total_start_time
+```
+
+
+
+
+
+
+
+# Session info:
+
+```{r session-info}
+sessionInfo()
+```

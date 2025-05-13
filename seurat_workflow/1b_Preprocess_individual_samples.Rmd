@@ -1,0 +1,389 @@
+---
+title: "Pre-process samples separately for doublet and ambient removal"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+```{r run-number}
+run_number_1b <- commandArgs(trailingOnly = TRUE)[4]
+run_number_1b
+```
+
+
+
+
+
+
+## Libraries
+
+
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(Matrix)
+library(cowplot)
+library(future)
+```
+
+## other bits
+
+```{r run-time-tibble}
+process_time <- tibble()
+stop_the_clock <- function(chunk_name = "unnamed") {
+    temp <- tibble::tibble(Code_chunk = chunk_name,
+                           Start_time = start_time,
+                           Stop_time = Sys.time(),
+                           Run_time = difftime(Stop_time, Start_time, units = "mins")
+                           )
+    process_time <- dplyr::bind_rows(process_time, temp)
+    return(process_time)
+}
+```
+
+
+
+
+
+## Data
+
+```{r load-data}
+start_time <- Sys.time()
+if (run_number_1b == 1) {
+    path_modifier <- "trimmed_seurat_list.rds"
+}
+if (run_number_1b == 2) {
+    path_modifier <- "doublets_removed_trimmed_seurat_list.rds"
+}
+if (run_number_1b == 3) {
+    path_modifier <- "doublets_removed_ambient_removed_trimmed_seurat_list.rds"
+}
+print(path_modifier)
+seurat_list_trim <- read_rds(file = paste0(objects_path,
+                             dataset, "_",
+                             input_type, "_",
+                             path_modifier)
+                )
+seurat_list_trim
+process_time <- stop_the_clock("load_data")
+```
+
+
+
+
+
+
+# Pre-process samples
+
+Running a simple `Seurat` pipeline to get clustering and embedding information to feed into `DoubletFinder`, `SoupX`, and `decontX`.
+
+
+
+
+```{r sct, warning = FALSE, message = FALSE}
+start_time <- Sys.time()
+if (parallelize) {
+    plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+if (normalization == "SCT") {
+    for (i in seq_along(seurat_list_trim)) {
+        seurat_list_trim[[i]] <- SCTransform(seurat_list_trim[[i]],
+                                           return.only.var.genes = FALSE,
+                                           variable.features.n = n_var_features,
+                                           verbose = FALSE)
+    }
+}
+if (parallelize) {
+    plan("sequential")
+}
+process_time <- stop_the_clock("sct")
+```
+
+
+```{r lognorm, warning = FALSE, message = FALSE}
+start_time <- Sys.time()
+if (parallelize) {
+    plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+if (normalization == "LogNormalize") {
+    for (i in seq_along(seurat_list_trim)) {
+        seurat_list_trim[[i]] <- NormalizeData(seurat_list_trim[[i]], assay = "RNA")
+        seurat_list_trim[[i]] <- FindVariableFeatures(object = seurat_list_trim[[i]],
+                                                      selection.method = var_gene_method,
+                                                      nfeatures = n_var_features,
+                                                      mean.cutoff = c(min_mean_cutoff, max_mean_cutoff),
+                                                      dispersion.cutoff = c(min_dispersion_cutoff, max_dispersion_cutoff)
+                                                  )
+        seurat_list_trim[[i]]@assays[["RNA"]]@var.features <- seurat_list_trim[[i]]@assays[["RNA"]]@var.features[1:n_var_features]
+    }
+}
+process_time <- stop_the_clock("lognorm")
+```
+
+```{r remove_iso}
+for (i in seq_along(seurat_list_trim)) {
+    var_features <- seurat_list_trim[[i]]@assays[["RNA"]]@var.features
+    VariableFeatures(seurat_list_trim[[i]]) <- setdiff(var_features, iso_genes_remove)
+}
+```
+
+
+```{r scale-data}
+start_time <- Sys.time()
+if (parallelize) {
+    plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+if (normalization == "LogNormalize") {
+    for (i in seq_along(seurat_list_trim)) {
+
+        ### I had been using these ScaleData settings for DoubletFinder, but the clustering looks strange. Will try the
+        ### second ScaleData settings to see how they look.
+
+        # seurat_list_trim[[i]] <- ScaleData(seurat_list_trim[[i]],
+        #                                    use.umi = use_umi,
+        #                                    model.use = test_use)
+
+        seurat_list_trim[[i]] <- ScaleData(object = seurat_list_trim[[i]],
+                                           assay = "RNA",
+                                           features = rownames(seurat_list_trim[[i]]),
+                                           vars.to.regress = setdiff(vars_to_regress, "orig.ident"))
+    }
+}
+if (parallelize) {
+    plan("sequential")
+}
+process_time <- stop_the_clock("scale_data")
+```
+
+
+
+```{r pca-etc}
+start_time <- Sys.time()
+if (parallelize) {
+    plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+for (i in seq_along(seurat_list_trim)) {
+    seurat_list_trim[[i]] <- RunPCA(object = seurat_list_trim[[i]],
+                                      npcs = curr_pc,
+                                      verbose = TRUE)
+    seurat_list_trim[[i]] <- FindNeighbors(object = seurat_list_trim[[i]],
+                                             reduction = "pca",
+                                             dims = 1:curr_pc,
+                                             k.param = neighbours,
+                                             force.recalc = TRUE)
+    # For samples with few cells, too high of a resolution fails, so will just set the resolution
+    # to a quarter of the "ideal". Could also use a 'tryCatch' but I think it's better to keep the
+    # resolution the same for all samples.
+    seurat_list_trim[[i]] <- FindClusters(object = seurat_list_trim[[i]], resolution = curr_res / 4)
+    seurat_list_trim[[i]] <- RunUMAP(object = seurat_list_trim[[i]], dims = 1:curr_pc)
+}
+seurat_list_trim
+if (parallelize) {
+    plan("sequential")
+}
+process_time <- stop_the_clock("pca_etc")
+```
+
+
+
+```{r plot-umap, fig.height = 10, fig.width = 10}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_trim)) {
+    pt_size <- 4 * AutoPointSize(data = seurat_list_trim[[i]], raster = FALSE)
+    p <- DimPlot(object = seurat_list_trim[[i]],
+                pt.size = min(4, pt_size),
+                label = TRUE) +
+        NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    title <- ggdraw() +
+        draw_label(unique(seurat_list_trim[[i]]@meta.data[["orig.ident"]]),
+        fontface = "bold",
+        x = 0,
+        hjust = 0,
+        size = 16)
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1)))
+}
+process_time <- stop_the_clock("plot_umap")
+```
+
+
+
+
+
+# Save the data
+
+
+
+```{r save-data}
+start_time <- Sys.time()
+if (run_number_1b == 1) {
+    path_modifier <- "trimmed_preprocessed_seurat_list.rds"
+}
+if (run_number_1b == 2) {
+    path_modifier <- "doublets_removed_trimmed_preprocessed_seurat_list.rds"
+}
+if (run_number_1b == 3) {
+    path_modifier <- "doublets_removed_ambient_removed_trimmed_preprocessed_seurat_list.rds"
+}
+print(path_modifier)
+write_rds(x = seurat_list_trim,
+           file = paste0(objects_path,
+                         dataset, "_",
+                         input_type, "_",
+                         path_modifier)
+            )
+process_time <- stop_the_clock("save_data")
+```
+
+
+
+
+# Run time
+
+```{r run-times}
+process_time
+```
+
+
+```{r plot-run-times, fig.width = 10, fig.height = 3}
+process_time$Code_chunk <- factor(process_time$Code_chunk, levels = rev(process_time$Code_chunk))
+process_time %>%
+    ggplot(aes(x = Code_chunk, y = Run_time, fill = Run_time)) +
+    geom_col(width = 0.8) +
+    xlab("Code Chunk") +
+    ylab("Run Time (mins)") +
+    coord_flip()
+```
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (job_id != "local") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+
+
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

@@ -1,0 +1,364 @@
+---
+title: "Collate Subclustering of integrated data"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+
+```{r params-manual}
+source("param_files/pipeline_R_params__PUBnofacs_v1_cb.R")
+```
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+```
+
+
+
+
+
+## Load the data
+
+
+```{r load-data}
+if (remove_doublets == FALSE && remove_ambient == FALSE) {
+    path_modifier <- ""
+}
+if (remove_doublets == TRUE && remove_ambient == FALSE) {
+    path_modifier <- "_doublets_removed"
+}
+if (remove_doublets == FALSE && remove_ambient == TRUE) {
+    path_modifier <- "_ambient_removed"
+}
+if (remove_doublets == TRUE && remove_ambient == TRUE) {
+    path_modifier <- "_doublets_removed_ambient_removed"
+}
+
+integrated <- read_rds(file = paste0(objects_path,
+                                    dataset, "_",
+                                    input_type, "_",
+                                    normalization, "_",
+                                    integration, "_",
+                                    "integrated_seurat",
+                                    path_modifier,
+                                    ".rds")
+                            )
+integrated
+```
+
+
+```{r}
+main_objs_list <- list.files("../analyses/rds_files/") %>%
+                    str_subset("list", negate = TRUE) %>%
+                    str_subset("subclusting.rds") %>%
+                    str_subset("tsne", negate = TRUE)
+main_objs_list
+```
+
+```{r}
+main_objs_list %>%
+    str_remove("brain_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_ambient_removed_") %>%
+    str_remove("_subclusting.rds")
+```
+
+
+
+## Add tSNE to main object
+
+```{r}
+main_objs <- list()
+for (i in seq_along(main_objs_list)) {
+    main_objs[[i]] <- read_rds(paste0("../analyses/rds_files/", main_objs_list[[i]]))
+}
+names(main_objs) <- main_objs_list %>%
+  str_remove("brain_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_ambient_removed_") %>%
+  str_remove("_subclusting.rds")
+main_objs
+```
+
+
+
+```{r}
+new_idents <- list()
+my_append_list <- list("Achl_", "GABA_", "Glut_", "KC_", "Mono_")
+for (i in seq_along(main_objs)) {
+    new_idents[[i]] <- main_objs[[i]]@meta.data %>%
+                            select(fixed_ann) %>%
+                            rownames_to_column("cell_id") %>%
+                            mutate(subcluster_clusters = as.factor(paste0(my_append_list[[i]],
+                                                                          if_else(grepl("^[0-9]+$", as.character(fixed_ann)),
+                                                                                  sprintf("%03d", as.numeric(as.character(fixed_ann))),
+                                                                                  as.character(fixed_ann)
+                                                                                  )
+                                                                          )
+                                                                   )
+                                   ) %>%
+                            select(-fixed_ann)
+}
+all_new_idents <- bind_rows(new_idents)
+all_new_idents
+```
+
+
+```{r}
+all_new_idents <- integrated@meta.data %>%
+                            select(annotation_broad_cell_type_ext_fix) %>%
+                            rownames_to_column("cell_id") %>%
+                            left_join(all_new_idents, by = "cell_id") %>%
+                            mutate(subcluster_clusters = as.factor(if_else(
+                                                            as.character(annotation_broad_cell_type_ext_fix) == "Neuroendocrine",
+                                                            "Neuroendocrine",
+                                                            as.character(subcluster_clusters)
+                                                            )
+                                                        ) 
+                                   ) %>%
+                            mutate(subcluster_clusters = as.factor(if_else(
+                                                            as.character(annotation_broad_cell_type_ext_fix) == "Motor_neuron",
+                                                            "Motor_neuron",
+                                                            as.character(subcluster_clusters)
+                                                            )
+                                                        )
+                                   )
+integrated <- AddMetaData(object = integrated, metadata = all_new_idents$subcluster_clusters, col.name = "subcluster_clusters")
+```
+
+
+
+
+
+
+
+```{r fig.width = 20, fig.height = 10}
+p1 <- DimPlot(object = integrated, group.by = "RNA_snn_res.20", pt.size = 0.2, raster = FALSE, reduction = "tsne") +
+        NoLegend() +
+        NoAxes() +
+        coord_fixed()
+p2 <- DimPlot(object = integrated, group.by = "subcluster_clusters", pt.size = 0.2, raster = FALSE, reduction = "tsne") +
+        NoLegend() +
+        NoAxes() +
+        coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot_grid(p1, p2, ncol = 2)
+```
+
+
+
+
+```{r fig.width = 20, fig.height = 14}
+p1 <- DimPlot(object = integrated, 
+              group.by = "subcluster_clusters", 
+              pt.size = 0.2, 
+              raster = FALSE, 
+              reduction = "tsne") +
+        # NoLegend() +
+        NoAxes() +
+        coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+```
+
+
+
+
+```{r fig.width = 20, fig.height = 10}
+DimPlot(object = integrated, group.by = "annotation_broad_cell_type_ext_fix", pt.size = 0.2, raster = FALSE, reduction = "tsne") +
+    NoAxes() +
+    coord_fixed()
+```
+
+
+
+
+
+
+```{r fig.width = 20, fig.height = 18}
+p1 <- DimPlot(object = integrated, 
+              group.by = "subcluster_clusters", 
+              pt.size = 0.4, 
+              raster = FALSE, 
+              reduction = "tsne_240pcs") +
+        NoLegend() +
+        # NoAxes() +
+        coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+```
+
+
+
+
+```{r fig.width = 20, fig.height = 18}
+p1 <- DimPlot(object = integrated, 
+              group.by = "subcluster_clusters", 
+              pt.size = 0.2, 
+              raster = FALSE, 
+              reduction = "umap_240pcs") +
+        NoLegend() +
+        # NoAxes() +
+        coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+```
+
+
+
+
+
+
+
+```{r}
+length(unique(integrated$subcluster_clusters))
+```
+
+
+
+
+# Save Data
+
+
+```{r}
+paste0(objects_path,
+                      dataset, "_",
+                      input_type, "_",
+                      normalization, "_",
+                      integration, "_",
+                      "integrated_seurat",
+                      path_modifier,
+                      ".rds")
+```
+
+New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds
+New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds
+
+
+```{r save-data}
+write_rds(x = integrated,
+          file = paste0(objects_path,
+                      dataset, "_",
+                      input_type, "_",
+                      normalization, "_",
+                      integration, "_",
+                      "integrated_seurat",
+                      path_modifier,
+                      ".rds")
+          )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

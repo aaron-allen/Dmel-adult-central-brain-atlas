@@ -1,0 +1,59 @@
+# YAML file for pyscenic_pipeline.py
+
+cluster:
+    queue_manager: slurm
+    queue: long
+
+conda_env: pyscenic_py
+
+
+# my estimates are that the RAM needs for this grn step are 0.28-0.32GB/cell/core plus the size of the input data
+# this is based on:
+#     - 178K cells with 10 cores uses ~500GB ram
+#     - 178K cells with 8 cores uses ~400GB ram
+#     - 178K cells with 4 cores uses ~220GB ram
+#
+# but:
+#     - 66K cells with 5 cores uses ~55GB ram    ~0.17GB/1Kcell/core
+#     - 55K cells with 5 cores uses ~40GB ram    ~0.15GB/1Kcell/core
+#
+#
+#
+#
+# so the whole meta cb with 330K cells would need at least ~100GB per core
+#
+#
+# 8 cores for the 178K cells seemed like it would finish within a week
+# no idea about the 330K cells though ...
+#
+#
+#
+
+
+grn:
+    threads: 10              # all the cores you can spare
+    memory: 2G            # 1MB/cell (depending on # cores - doubling cores, doubles memory) - 170K cells with 8 cores uses ~400GB ram, 4 cores uses ~220GB
+    tfs_list:  ../../../../../../../aallen/scenic_resourses/allTFs_dmel.txt
+    other_options: -t       # add -t if csv file is genes (rows) x cells (columns)
+
+add_cor:
+    threads: 1              # doesn't seem to be multi-threaded
+    memory: 20G              # min 2GB, then +2GB/10K cells
+    other_options: -t       # add -t if csv file is genes (rows) x cells (columns)
+
+ctx:
+    threads: 8              # 8
+    memory: 1G              # 2GB/CPUcore
+    annotations: ../../../../../../../aallen/scenic_resourses/motifs-v8-nr.flybase-m0.001-o0.0.tbl
+    # the name of the file that contains the motif annotations to use
+    database_fname:
+        - ../../../../../../../aallen/scenic_resourses/dm6-5kb-upstream-full-tx-11species.mc8nr.feather
+        -  # this can be left empty
+    # the name(s) of the regulatory feature databases; two file formats are supported: feather or db (legacy)
+    other_options: -a -t    # --mask_dropouts, add -t if csv file is genes (rows) x cells (columns)
+
+aucell:
+    threads: 2              # comparatively this runs quick, so doesn't need a lot of cores
+    memory: 10G              # 1MB/cell
+    auc_threshold: 0.05
+    other_options: -t       # add -t if csv file is genes (rows) x cells (columns)

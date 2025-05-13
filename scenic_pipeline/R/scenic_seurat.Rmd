@@ -1,0 +1,1171 @@
+---
+title: "Normalization and Batch Correction of scRNA-Seq data"
+description:
+author: "Aaron M. Allen, Devika Agarwal"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+
+## Parameters
+
+```{r}
+# params <- list()
+
+# params$stacked_vln_function <- "../R/stacked_violin.R"
+# params$dotplot_function <- "../R/seurat_dotplot.R"
+
+# params$seurat_object <- "../data.dir/dsx_scenic.rds"
+# params$aucell_scores <- "../results.dir/aggregated.dir/raw.dir/dsx.dir/aucell.csv"
+# params$aucell_zscores <- "../results.dir/aggregated.dir/raw.dir/dsx.dir/aucell_zscores.csv"
+# params$aucell_zscores_celltype <- "../results.dir/aggregated.dir/raw.dir/dsx.dir/aucell_zscores_cell_type-annotation.csv"
+# params$aucell_zscores_condition <- "None" # "../results.dir/aggregated.dir/raw.dir/dsx.dir/aucell_zscores_cell_type_sexed-annotation.csv"
+# params$binary_matrix <- "../results.dir/aggregated.dir/raw.dir/dsx.dir/binary_matrix.csv"
+
+# params$results_directory <- "../results.dir/aggregated.dir/raw.dir/dsx.dir/pyscenic_r.dir/"
+# params$plots_directory <- "../results.dir/aggregated.dir/raw.dir/dsx.dir/plots.dir"
+# params$datatype <- "raw"
+
+# params$umap_pcs <- 60
+# params$clustering_resolution <- 2
+
+# params$condition <- "sex"
+# params$celltype <- "cell_type"
+# params$celltype_condition <- "cell_type_sexed"
+
+# params$reference_condition <- "female"
+# params$latent_variables <- "experiment"
+# params$diff_exp_test <- "MAST"
+# params$FDR_threshold <- 0.05
+# params$top_n <- 20
+
+
+
+
+# # number of PCs to use for clustering
+# params$curr_pc <- 20                # "ideal" pc
+# params$min_pc <- 10                 # min pc to test in range of pcs
+# params$max_pc <- 90                 # max pc to test in range of pcs
+# params$step_pc <- 10                # step size from min to max pc to test in range of pcs
+
+# params$neighbours <- 50
+
+# # RunHarmony params
+# params$harmony_group <- c("experiment") #, "sex")
+# params$harmony_theta <- rep(2, length(params$harmony_group))     # Diversity clustering penalty parameter
+# params$harmony_lambda <- rep(1, length(params$harmony_group))    # Ridge regression penalty parameter
+# params$harmony_nclust <- 200                              # Number of clusters in model
+# params$harmony_tau <- 30                                  # expected number of cells per cluster
+
+# # Clustering
+# params$cluster_resolutions <- c(0.1,0.2,0.5,1,1.5,2,3,4,5,6,8,10)
+
+
+# # Parallization parameters
+# params$parallelize <- TRUE
+# params$futures_plan <- "multisession"      # still not sure what the best option is for the cluster
+# params$futures_n_cores <- 4
+# params$futures_ram <- 12
+# params$tsne_n_cores <- 28
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0(params$plots_directory, "/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+Script:
+1. Plots absolute AUCell scores, AUCell Z-scores and binary AUCell scores on Seurat UMAP
+2. Performs PCA and clustering on AUCell scores - cluster cells together with similar regulon profiles
+3. Plots violin plots of AUCell score split by cell type or condition
+4. Identifies top 10 regulons per cell type and group based on z-score - plots violin plots and heatmaps
+5. Identifies top 10 regulons per cell type and group based on absolute AUCell score
+6. Performs Wilcoxon (or chosen test e.g. MAST) and KS tests to identify regulons that show differential activity between cell types and conditions
+7. Plots heatmaps of top 10 regulons from Wilcoxon or KS for cell types and conditions
+
+
+```{r Load_packages, include = FALSE}
+library(Seurat)
+library(harmony)
+library(tidyverse)
+
+library(colorspace)
+library(pheatmap)
+library(cowplot)
+library(MAST)
+
+
+library(patchwork)
+library(RColorBrewer)
+library(gtools)
+
+options(scipen = 999)
+```
+
+
+
+```{r Read_in_data, message = FALSE}
+seurat_object <- read_rds(params$seurat_object)
+aucell_matrix <- read_csv(params$aucell_scores)
+aucell_zscore <- read_csv(params$aucell_zscores)
+aucell_zscores_celltype <- read_csv(params$aucell_zscores_celltype)
+binary_aucell_matrix <- read_csv(params$binary_matrix)
+results_directory <- params$results_directory
+plots_directory <- params$plots_directory
+datatype <- params$datatype
+metadata <- as.data.frame(seurat_object@meta.data)
+
+if (!grepl("None", params$aucell_zscores_condition)) {
+    aucell_zscore_condition <- read_csv(params$aucell_zscores_condition)
+}
+
+if (params$condition != "None") {
+    metadata <- metadata %>%
+        rownames_to_column(var = "barcode") %>%
+        mutate(!!sym(params$celltype) := as.character(!!sym(params$celltype)),
+               !!sym(params$condition) := as.character(!!sym(params$condition)))
+} else {
+    metadata <- metadata %>%
+        rownames_to_column(var = "barcode") %>%
+        mutate(!!sym(params$celltype) := as.character(!!sym(params$celltype)))
+}
+
+if (!dir.exists(plots_directory)) {
+    dir.create(plots_directory, recursive = TRUE)
+}
+
+if (!dir.exists(results_directory)) {
+    dir.create(results_directory, recursive = TRUE)
+}
+```
+
+
+
+```{r Add_assay}
+# Add binary matrix to counts slot, AUCell z-scores to data slot and AUCell scores to scale.data
+ 
+
+# in_conda <- R.home() %>% str_detect("conda")
+# if (in_conda) {
+	binary_aucell_matrix <- binary_aucell_matrix %>%
+	    mutate(X1 = str_replace_all(string = X1, pattern = fixed("."), replacement = "-")) %>%
+	    column_to_rownames(var = "X1")
+	aucell_zscore <- aucell_zscore %>%
+	    mutate(X1 = str_replace_all(string = X1, pattern = fixed("."), replacement = "-")) %>%
+	    column_to_rownames(var = "X1")
+# } else {
+# 	binary_aucell_matrix <- binary_aucell_matrix %>%
+# 	    mutate(`...1` = str_replace_all(string = `...1`, pattern = fixed("."), replacement = "-")) %>%
+# 	    column_to_rownames(var = "...1")
+# 	aucell_zscore <- aucell_zscore %>%
+# 	    mutate(`...1` = str_replace_all(string = `...1`, pattern = fixed("."), replacement = "-")) %>%
+# 	    column_to_rownames(var = "...1")
+# }
+ 
+binary_aucell_matrix <- binary_aucell_matrix %>%
+	    t() %>%
+	    as.data.frame()
+aucell_zscore <- aucell_zscore %>%
+	    t() %>%
+	    as.data.frame()
+
+
+aucell_matrix <- aucell_matrix %>%
+    rename_with(~ str_replace_all(string = .x, pattern = fixed("."), replacement = "-")) %>% 
+    column_to_rownames(var = "Regulon")
+
+# Counts slot in scenic assay will contain binary AUCell scores
+seurat_object[["scenic"]] <- CreateAssayObject(counts = binary_aucell_matrix)
+DefaultAssay(seurat_object) <- "scenic"
+seurat_object <- SetAssayData(object = seurat_object, 
+                              slot = "data",
+                              new.data = as.matrix(aucell_zscore))
+seurat_object <- SetAssayData(object = seurat_object, 
+                              slot = "scale.data",
+                              new.data = as.matrix(aucell_matrix))
+
+```
+
+
+
+<!-- #### AUCell scores on gene expression UMAP/tSNE -->
+
+<!-- ```{r Plot_AUCell_functions} -->
+<!-- # Plot AUCell scores on the gene expression UMAP -->
+<!-- plot_aucell <- function(seurat_object, feature, slot, name = "aucell_score", -->
+<!--                         colours = c("lightsteelblue2", "black"), reduction) { -->
+<!--     DefaultAssay(object = seurat_object) <- "scenic" -->
+<!--     pdf(paste0(plots_directory, "/", feature, "_", name, "_", reduction, ".pdf")) -->
+<!--     print(FeaturePlot(object = seurat_object,  -->
+<!--                       features = feature, -->
+<!--                       slot = slot, -->
+<!--                       cols = colours, -->
+<!--                       order = TRUE, -->
+<!--                       reduction = reduction,  -->
+<!--                       coord.fixed = TRUE) -->
+<!--           ) -->
+<!--     dev.off() -->
+<!-- } -->
+
+<!-- # Plot absolute AUCell values and AUCell z-scores -->
+<!-- for (regulon in rownames(aucell_matrix)) { -->
+<!--     plot_aucell(seurat_object, regulon, "scale.data", reduction = "umap") -->
+<!--     plot_aucell(seurat_object, regulon, "data", name = "aucell_z_score", reduction = "umap") -->
+<!-- } -->
+
+<!-- # Plot binary AUCell scores -->
+<!-- plot_binary_aucell <- function(seurat_object, feature, -->
+<!--                                name = "binary_aucell_score", -->
+<!--                                highlight_colour = "black", -->
+<!--                                lowlight_colour = "lightsteelblue2", -->
+<!--                                reduction) { -->
+<!--     DefaultAssay(seurat_object) <- "scenic" -->
+<!--     pdf(paste0(plots_directory, "/", feature, "_", name, "_", reduction, ".pdf")) -->
+<!--     print(DimPlot(object = seurat_object, -->
+<!--                   reduction = reduction, -->
+<!--                   order = TRUE, -->
+<!--                   cells.highlight = colnames(binary_aucell_matrix)[binary_aucell_matrix[feature, ] == 1], -->
+<!--                   cols.highlight = highlight_colour, -->
+<!--                   cols = lowlight_colour) + -->
+<!--             coord_fixed() + -->
+<!--             NoLegend() -->
+<!--           ) -->
+<!--     dev.off() -->
+<!-- } -->
+<!-- ``` -->
+
+
+<!-- ```{r Plot_AUCell_scores_umap} -->
+<!-- for (regulon in rownames(aucell_matrix)) { -->
+<!--         plot_aucell(seurat_object, regulon, "scale.data", reduction = "umap") -->
+<!--         plot_aucell(seurat_object, regulon, "data",name = "aucell_z_score", reduction = "umap") -->
+<!--         plot_binary_aucell(seurat_object, regulon, name = "binary_aucell_score", reduction = "umap") -->
+<!-- } -->
+<!-- ``` -->
+
+
+<!-- ```{r Plot_AUCell_scores_tsne} -->
+<!-- # Same results for tSNE -->
+<!-- if ("tsne" %in% names(seurat_object@reductions)) { -->
+<!--     for (regulon in rownames(aucell_matrix)) { -->
+<!--         plot_aucell(seurat_object, regulon, "scale.data", reduction = "tsne") -->
+<!--         plot_aucell(seurat_object, regulon, "data",name = "aucell_z_score", reduction = "tsne") -->
+<!--         plot_binary_aucell(seurat_object, regulon, name = "binary_aucell_score", reduction = "tsne") -->
+<!--     } -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+
+#### PCA and clustering on AUCell scores
+
+```{r PCA_and_clustering}
+# Run PCA and UMAP based on the AUCell scores
+seurat_object <- RunPCA(seurat_object, 
+                        assay = "scenic", 
+                        npcs = params$max_pc,
+                        reduction.name = "scenic_pca",
+                        reduction.key = "scenicPC_",
+                        features = rownames(GetAssayData(seurat_object, "scale.data")),
+                        verbose = TRUE)
+```
+
+
+```{r elbow_plot}
+ElbowPlot(seurat_object, reduction = "scenic_pca")
+```
+
+
+```{r run_harmony}
+seurat_object <- RunHarmony(object = seurat_object,
+                            group.by.vars = params$harmony_group,
+                            assay.use = "scenic",
+                            reduction.save = "scenic_harmony",
+                            theta = params$harmony_theta,      # Diversity clustering penalty parameter
+                            lambda = params$harmony_lambda,    # Ridge regression penalty parameter
+                            nclust = params$harmony_nclust,    # Number of clusters in model
+                            tau = params$harmony_tau)          # expected number of cells per cluster
+```
+
+
+
+<!-- ```{r plot-pca-heatmap, fig.width = 12, fig.height = 20, warning = FALSE, message = FALSE} -->
+<!-- p_list <- list() -->
+<!-- for (i in 1:min(params$max_pc, 10)) { -->
+<!--     p_list[[i]] <- DimHeatmap(object = seurat_object,  -->
+<!--                               reduction = "scenic_harmony", -->
+<!--                               # dims = i, -->
+<!--                               cells = 500, -->
+<!--                               balanced = TRUE, -->
+<!--                               fast = FALSE) + -->
+<!--         scale_fill_gradientn(colors = diverging_hcl(10, palette = "Vik")) -->
+<!-- } -->
+<!-- plot_grid(plotlist = p_list, ncol = 2) -->
+<!-- ``` -->
+
+
+
+
+## Run UMAP
+
+
+```{r run-umap}
+test_pcs <- seq(params$min_pc, params$max_pc, params$step_pc)
+for (i in seq_along(test_pcs)) {
+    seurat_object <- RunUMAP(object = seurat_object, 
+                             assay = "scenic",
+                             dims = 1:test_pcs[[i]],
+                             n.neighbors = params$neighbours,
+                             n.epochs = 1000,
+                             min.dist = 0.01,
+                             spread = 5,
+                             fast = FALSE,
+                             verbose = TRUE,
+                             reduction = "scenic_harmony",
+                             reduction.name = paste0("scenic_umap_", test_pcs[[i]], "pcs"),
+                             reduction.key = paste0("scenicumap", test_pcs[[i]], "pcs_")
+                             )
+}
+seurat_object@reductions[["scenic_umap"]] <- seurat_object@reductions[[paste0("scenic_umap_", params$curr_pc, "pcs")]]
+```
+
+
+```{r}
+DefaultAssay(object = seurat_object) <- "scenic"
+test_pcs <- seq(params$min_pc, params$max_pc, params$step_pc)
+for (i in seq_along(test_pcs)) {
+    seurat_object <- RunTSNE(seurat_object,
+                    reduction = "scenic_harmony",
+                    num_threads = 24,
+                    verbose = F,
+                    dims = 1:test_pcs[[i]],
+                    do.fast = FALSE,
+                    check_duplicates = F,
+                    max_iter = 20000,
+                    theta = 0.05,
+                    reduction.name = paste0("scenic_tsne_", test_pcs[[i]], "pcs"),
+                    reduction.key = paste0("scenictsne", test_pcs[[i]], "pcs_"))
+}
+seurat_object@reductions[["tsne"]] <- seurat_object@reductions[[paste0("scenic_tsne_", params$curr_pc, "pcs")]]
+```
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = seurat_object, 
+                 reduction = paste0("scenic_umap_", test_pc, "pcs"), 
+                 group.by = params$latent_variables) + 
+             coord_fixed()
+         )
+}
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+col_list <- scales::hue_pal()(length(unique(seurat_object@meta.data[[params$latent_variables]])))
+p <- list()
+for (i in 1:length(unique(seurat_object@meta.data[[params$latent_variables]]))) {
+  p[[i]] <- DimPlot(object = seurat_object,
+                    reduction = paste0("scenic_umap_", params$curr_pc, "pcs"),
+                    group.by = params$latent_variables,
+                    pt.size = 0.4,
+                    order = c(unique(seurat_object@meta.data[[params$latent_variables]])[i]),
+                    cols = c(rep("lightgrey",length(unique(seurat_object$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                # NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(seurat_object@meta.data[[params$latent_variables]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+if (params$condition != "None") {
+    for (test_pc in test_pcs) {
+        plot(DimPlot(object = seurat_object, reduction = paste0("scenic_umap_", test_pc, "pcs"), group.by = params$condition) + coord_fixed())
+    }
+}
+```
+
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = seurat_object,
+                 reduction = paste0("scenic_tsne_", test_pc, "pcs"),
+                 group.by = params$latent_variables) +
+             coord_fixed()
+         )
+}
+```
+
+
+
+```{r fig.width=12, fig.height=8}
+col_list <- scales::hue_pal()(length(unique(seurat_object@meta.data[[params$latent_variables]])))
+p <- list()
+for (i in 1:length(unique(seurat_object@meta.data[[params$latent_variables]]))) {
+  p[[i]] <- DimPlot(object = seurat_object,
+                    reduction = paste0("scenic_tsne_", params$curr_pc, "pcs"),
+                    group.by = params$latent_variables,
+                    pt.size = 0.4,
+                    order = c(unique(seurat_object@meta.data[[params$latent_variables]])[i]),
+                    cols = c(rep("lightgrey",length(unique(seurat_object$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                # NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(seurat_object@meta.data[[params$latent_variables]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+if (params$condition != "None") {
+    for (test_pc in test_pcs) {
+        plot(DimPlot(object = seurat_object, reduction = paste0("scenic_tsne_", test_pc, "pcs"), group.by = params$condition) + coord_fixed())
+    }
+}
+```
+
+
+
+
+
+
+
+
+# Clustering
+
+```{r clustering}
+seurat_object <- FindNeighbors(object = seurat_object,
+                               assay = "scenic",
+                               reduction = "scenic_harmony",
+                               dims = 1:params$curr_pc,
+                               k.param = 30,
+                               force.recalc = TRUE,
+							   graph.name = "scenic_snn",
+                               verbose = TRUE
+                               )
+
+# in_conda <- R.home() %>% str_detect("conda")
+# if (in_conda) {
+#     algorithm_use <- 4
+# } else {
+    algorithm_use <- 1
+# }
+
+seurat_object <- FindClusters(object = seurat_object,
+                              algorithm = algorithm_use,
+                              resolution = params$cluster_resolutions,
+							  graph.name = "scenic_snn",
+                              verbose = TRUE)
+```
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(seurat_object@meta.data) %>% str_subset("scenic_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = seurat_object, group.by = res[[i]],
+                           reduction = paste0("scenic_umap_", params$curr_pc, "pcs"), 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(seurat_object@meta.data) %>% str_subset("scenic_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = seurat_object, group.by = res[[i]],
+                           reduction = paste0("scenic_umap_", params$curr_pc, "pcs"), 
+                           label = TRUE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+<!-- ```{r fig.width=16, fig.height=8} -->
+<!-- DimPlot(object = seurat_object,  -->
+<!-- 		group.by = paste0("scenic_snn_res.", params$clustering_resolution),  -->
+<!-- 		reduction = paste0("scenic_umap_", params$curr_pc, "pcs"),  -->
+<!--         split.by = params$condition, -->
+<!--         label = FALSE,  -->
+<!--         label.box = TRUE) +  -->
+<!--     NoLegend() +  -->
+<!--     coord_fixed() -->
+<!-- ``` -->
+
+
+
+
+```{r fig.width=10, fig.height=8}
+DimPlot(object = seurat_object, 
+		group.by = paste0("scenic_snn_res.", params$clustering_resolution), 
+		reduction = paste0("scenic_umap_", params$curr_pc, "pcs"), 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    ggtitle("SCENIC clusters") +
+    theme(plot.title = element_text(hjust = 0.5))
+DimPlot(object = seurat_object, 
+		group.by = params$celltype, 
+		reduction = paste0("scenic_umap_", params$curr_pc, "pcs"), 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    ggtitle("Gene expression clusters") +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r fig.width=16, fig.height=8}
+p1 <- DimPlot(object = seurat_object, 
+		group.by = params$celltype, 
+		reduction = paste0("scenic_umap_", params$curr_pc, "pcs"), 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    ggtitle("SCENIC UMAP") +
+    theme(plot.title = element_text(hjust = 0.5))
+p2 <- DimPlot(object = seurat_object, 
+		group.by = params$celltype, 
+		reduction = paste0("umap_", params$curr_pc, "pcs"), 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    ggtitle("Gene expression UMAP") +
+    theme(plot.title = element_text(hjust = 0.5))
+plot_grid(p1, p2, ncol = 2)
+```
+
+```{r}
+# write_rds(seurat_object,
+#         file = paste0(params$results_directory, "/scenic_seurat_object.rds"))
+```
+
+
+
+
+## Plot SCENIC cluster identities on gene expression UMAP
+
+
+
+```{r fig.width=10, fig.height=8}
+DimPlot(object = seurat_object, 
+		group.by = paste0("scenic_snn_res.", params$clustering_resolution), 
+		reduction = paste0("umap_", params$curr_pc, "pcs"), 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    ggtitle("SCENIC clusters") +
+    theme(plot.title = element_text(hjust = 0.5))
+DimPlot(object = seurat_object, 
+		group.by = params$celltype, 
+		reduction = paste0("umap_", params$curr_pc, "pcs"), 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    ggtitle("Gene expression clusters") +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Stats to identify regulons that are differentially-expressed between conditions or cell types or celltypes_conditions
+
+```{r diff-reg-celltype}
+# Latent variables for test
+if (params$latent_variables == "None" | params$diff_exp_test == "wilcox") {
+    latent_variables <- NULL
+} else {
+    latent_variables <- params$latent_variables
+}
+
+# Cell type - one vs. all
+DefaultAssay(seurat_object) <- "scenic"
+Idents(seurat_object) <- params$celltype
+
+# if (params$parallelize) {
+#     plan(params$futures_plan, workers = params$futures_n_cores)
+#     options(future.globals.maxSize = params$futures_ram * 1024^3)
+# }
+markers_celltype <- FindAllMarkers(object = seurat_object,
+                                   slot = "scale.data",
+                                   only.pos = TRUE,
+                                   logfc.threshold = 0,
+                                   min.pct = 0,
+                                   test.use = params$diff_exp_test,
+                                   latent.vars = latent_variables,
+                                   verbose = TRUE)
+# if (params$parallelize) {
+#     plan("sequential")
+# }
+
+markers_celltype <- markers_celltype %>%
+    dplyr::rename(cell_type = cluster, regulon = gene) %>% 
+    filter(p_val_adj < 0.05)
+
+write_csv(markers_celltype,
+          paste0(params$results_directory, "/", params$diff_exp_test,
+                 "_celltype_onevsall_comparison.csv")
+          )
+```
+
+
+```{r}
+# Condition - one vs. all
+if (params$condition != "None") {
+    Idents(seurat_object) <- params$condition
+
+    # if (params$parallelize) {
+    #     plan(params$futures_plan, workers = params$futures_n_cores)
+    #     options(future.globals.maxSize = params$futures_ram * 1024^3)
+    # }
+    markers_condition <-  FindAllMarkers(object = seurat_object,
+                                         slot = "scale.data",
+                                         only.pos = TRUE,
+                                         logfc.threshold = 0,
+                                         min.pct = 0,
+                                         test.use = params$diff_exp_test,
+                                         latent.vars = latent_variables,
+                                         verbose = FALSE)
+    # if (params$parallelize) {
+    #     plan("sequential")
+    # }
+
+    markers_condition <- markers_condition %>%
+        dplyr::rename(condition = cluster, regulon = gene) %>%
+        filter(p_val_adj < 0.05)
+
+    write_csv(markers_condition,
+              paste0(params$results_directory, "/", params$diff_exp_test,
+                     "_condition_onevsall_comparison.csv")
+              )
+}
+```
+
+
+
+Condition - one vs. all
+
+```{r warning=FALSE}
+if (params$condition != "None") {
+
+    # if (params$parallelize) {
+    #     plan(params$futures_plan, workers = params$futures_n_cores)
+    #     options(future.globals.maxSize = params$futures_ram * 1024^3)
+    # }
+
+    markers_condition_by_celltype_list <- list()
+    DefaultAssay(seurat_object) <- "scenic"
+    Idents(seurat_object) <- params$celltype
+    celltypes <- sort(as.character(unique(seurat_object@meta.data[[params$celltype]])))
+
+    condition_options <- sort(unique(seurat_object@meta.data[[params$condition]]))
+    object_metadata <- FetchData(object = seurat_object,
+                                 vars = c(params$condition, params$celltype)) %>%
+        dplyr::rename(condition = params$condition, celltype = params$celltype) %>%
+        dplyr::count(condition, celltype, .drop = FALSE)
+
+    for (ii in seq_along(celltypes)) {
+
+        num_condition_1_cells <- object_metadata %>% filter(condition == condition_options[[1]] & celltype == celltypes[ii]) %>% pull(n)
+        num_condition_2_cells <- object_metadata %>% filter(condition == condition_options[[2]] & celltype == celltypes[ii]) %>% pull(n)
+        min_num_cells <- min(num_condition_1_cells, num_condition_2_cells)
+
+        if (min_num_cells > 3) {
+            markers <- FindMarkers(object = seurat_object,
+                                   slot = "scale.data",
+                                   ident.1 = condition_options[[1]],
+                                   ident.2 = condition_options[[2]],
+                                   group.by = params$condition,
+                                   subset.ident = celltypes[ii],
+                                   test.use = params$diff_exp_test,
+                                   latent.vars = latent_variables,
+                                   logfc.threshold = 0,
+                                   min.pct = 0,
+                                   only.pos = FALSE,
+                                   verbose = TRUE
+                                   ) %>%
+                rownames_to_column(var = "regulon") %>%
+                mutate(cell_type = celltypes[ii])
+            markers_condition_by_celltype_list[[celltypes[ii]]] <- markers
+            gc()
+        }
+    }
+    markers_condition_by_celltype <- bind_rows(markers_condition_by_celltype_list) %>%
+        dplyr::rename(!!paste0("pct_", condition_options[[1]]) := "pct.1") %>%
+        dplyr::rename(!!paste0("pct_", condition_options[[2]]) := "pct.2") %>%
+        filter(p_val_adj < 0.05)
+
+    # if (params$parallelize) {
+    #     plan("sequential")
+    # }
+
+    write_csv(markers_condition_by_celltype,
+              paste0(params$results_directory, "/", params$diff_exp_test,
+                     "_condition_by_celltype_comparison.csv")
+              )
+}
+```
+
+
+
+
+
+
+
+
+### Top n regulons per group - average expression per cluster or per condition
+
+```{r }
+Idents(seurat_object) <- params$celltype
+```
+
+```{r}
+
+top_n_celltype <- markers_celltype %>%
+    group_by(cell_type) %>%
+    filter(p_val_adj < params$FDR_threshold) %>%
+    slice_max(order_by = avg_diff, n = params$top_n)
+
+if (params$condition != "None") {
+	top_n_condition <- markers_condition %>%
+	    group_by(condition) %>%
+	    filter(p_val_adj < params$FDR_threshold) %>%
+	    slice_max(order_by = avg_diff, n = params$top_n)
+	
+	top_n_cellsubtype_condition <- markers_condition_by_celltype %>%
+	    group_by(cell_type) %>%
+	    filter(p_val_adj < params$FDR_threshold) %>%
+	    slice_max(order_by = abs(avg_diff), n = params$top_n)
+}
+
+```
+
+
+
+```{r Heatmap_top10_average, fig.height=12, fig.width=10}
+# Calculate average AUCell score for all regulons and then filter for regulons of interest
+
+# Celltype
+average_aucell_celltype <- AverageExpression(object = seurat_object,
+                                             slot = "scale.data")
+average_aucell_celltype <- as.data.frame(average_aucell_celltype[["scenic"]])
+write_rds(average_aucell_celltype,
+        paste0(params$results_directory, "/average_aucell_celltype.rds"))
+
+if (nrow(top_n_celltype) > 0) {
+    top_n_celltype_average <- average_aucell_celltype %>%
+        filter(rownames(.) %in% top_n_celltype$regulon)
+    
+    cluster_rows <- ifelse(nrow(top_n_celltype_average) > 2,
+                           TRUE, FALSE)
+    pheatmap::pheatmap(top_n_celltype_average,
+             scale = "row",
+             cluster_rows = cluster_rows,
+             cluster_cols = TRUE,
+             # filename = paste0(plots_directory, "/top10_regulons_",
+             #                   params$diff_exp_test, "_", params$celltype,
+             #                   "_average_heatmap.pdf"),
+             width = 5, height = 8,
+             border_color = NA,
+             angle_col = 90)
+} else {
+    "top_n_celltype is empty"
+}
+```
+
+
+```{r}
+# Condition
+if (params$condition != "None") {
+    Idents(seurat_object) <- params$condition
+
+    average_aucell_condition <- AverageExpression(
+        seurat_object,
+        assays = "scenic",
+        slot = "scale.data")
+    average_aucell_condition <- as.data.frame(average_aucell_condition[["scenic"]])
+    write_rds(average_aucell_condition,
+            paste0(params$results_directory, "/average_aucell_condition.rds"))
+
+    if (nrow(top_n_condition) > 0) {
+        top_n_condition_average <- average_aucell_condition %>%
+            filter(rownames(.) %in% top_n_condition$regulon)
+        cluster_rows <- ifelse(nrow(top_n_condition_average) > 2,
+                               TRUE, FALSE)
+        pheatmap::pheatmap(top_n_condition_average,
+                 scale = "row",
+                 cluster_rows = cluster_rows,
+                 cluster_cols = TRUE,
+                 # filename = paste0(plots_directory, "/top10_regulons_",
+                 #                   params$diff_exp_test,
+                 #                   "_condition_average_heatmap.pdf"),
+                 width = 5, height = 8,
+                 border_color = NA,
+                 angle_col = 90)
+
+    } else{
+        "top_n_condition is empty"
+    }
+}
+```
+
+
+```{r}
+# Celltype-condition combination
+if (params$condition != "None") {
+    if (params$celltype_condition != "None") {
+        metadata <- metadata %>%
+            unite(col = "celltype_condition",
+                  c(!!sym(params$celltype), !!sym(params$condition)),
+                  sep = "_",
+                  remove = FALSE)
+        seurat_object$celltype_condition <- metadata$celltype_condition
+
+        Idents(seurat_object) <- "celltype_condition"
+
+        average_aucell_celltype_condition <- AverageExpression(
+            seurat_object,
+            assays = "scenic",
+            slot = "scale.data")
+        average_aucell_celltype_condition <- as.data.frame(average_aucell_celltype_condition[["scenic"]])
+        write_rds(average_aucell_celltype_condition,
+                paste0(params$results_directory, "/average_aucell_celltype_condition.rds"))
+
+        if (nrow(top_n_cellsubtype_condition) > 0) {
+            top_n_celltype_condition_average <- average_aucell_celltype_condition %>%
+                filter(rownames(.) %in% top_n_cellsubtype_condition$regulon)
+
+            cluster_rows <- ifelse(nrow(top_n_celltype_condition_average) > 2,
+                                   TRUE, FALSE)
+            pheatmap::pheatmap(top_n_celltype_condition_average,
+                     scale = "row",
+                     cluster_rows = cluster_rows,
+                     cluster_cols = TRUE,
+                     fontsize_col = 8,
+                     treeheight_col = 10,
+                     # filename = paste0(plots_directory, "/top10_regulons_",
+                     #                   params$diff_exp_test,
+                     #                   "_celltype_condition_average_heatmap.pdf"),
+                     width = 8, height = 8,
+                     border_color = NA,
+                     angle_col = 90)
+
+        } else {
+            "top_n_cellsubtype_condition is empty"
+        }
+    } else {
+        print("celltype_condition parameter is set to FALSE")
+    }
+}
+```
+
+
+
+```{r Dotplot, fig.width=12, fig.height=12}
+source(params$dotplot_function)
+
+# Plot dotplot for average AUCell score in scale.data slot of the SCENIC assay
+
+# Cell type
+if (nrow(top_n_celltype) > 0) {
+    top_n_celltype <- top_n_celltype %>%
+        group_by(cell_type) %>%
+        filter(p_val_adj < params$FDR_threshold) %>%
+        arrange(desc(avg_diff)) %>%
+        slice_head(n = 5)
+    
+    Idents(seurat_object) <- params$celltype
+    cluster.idents <- ifelse(nrow(top_n_celltype) > 2,
+                             TRUE, FALSE)
+    
+    p <- DotPlot(object = seurat_object, assay = "scenic",
+                 features = unique(top_n_celltype$regulon),
+                 cols = "RdYlBu", col.max = 3, col.min = -3,
+                 cluster.idents = cluster.idents) +
+        # RotatedAxis() +
+        coord_flip() +
+        FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+    
+    p <- p +
+        theme(legend.text = element_text(size = 12),
+              legend.title = element_text(size = 12))
+    plot(p)
+    # ggsave(filename = paste0(plots_directory, "/top10_regulons_",
+    #                          params$diff_exp_test, "_",
+    #                          params$celltype, "_dotplot.pdf"),
+    #        width = 8, height = 6)
+    
+} else {
+    "top_n_celltype is empty"
+}
+
+
+# Condition
+if (params$condition != "None") {
+    
+    if (nrow(top_n_condition) > 0) {
+        Idents(seurat_object) <- params$condition
+        cluster.idents <- ifelse(nrow(top_n_condition) > 2,
+                                 TRUE, FALSE)
+        
+        p <- DotPlot(object = seurat_object, assay = "scenic",
+                     features = unique(top_n_condition$regulon),
+                     cols = "RdYlBu", col.max = 3, col.min = -3,
+                     cluster.idents = cluster.idents) +
+            RotatedAxis() +
+            FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+        
+        p <- p +
+            theme(legend.text = element_text(size = 12),
+                  legend.title = element_text(size = 12))
+        plot(p)
+        # ggsave(filename = paste0(plots_directory, "/top10_regulons_",
+        #                          params$diff_exp_test,
+        #                          "_condition_dotplot.pdf"),
+        #        width = 8, height = 6)
+        
+    } else {
+        "top_n_condition is empty"
+    }
+}
+
+# Celltype-condition combination
+if (params$condition != "None" & params$celltype_condition != "None") {
+    
+    if (nrow(top_n_cellsubtype_condition) > 0) {
+        Idents(seurat_object) <- "celltype_condition"
+        cluster.idents <- ifelse(nrow(top_n_cellsubtype_condition) > 2,
+                                 TRUE, FALSE)
+        
+        p <- DotPlot(object = seurat_object, assay = "scenic",
+                     features = unique(top_n_cellsubtype_condition$regulon),
+                     cols = "RdYlBu", col.max = 3, col.min = -3,
+                     cluster.idents = cluster.idents) +
+            # RotatedAxis() +
+            FontSize(x.text = 9,y.text = 10, x.title = 8, y.title = 8)
+        
+        p <- p +
+            theme(legend.text = element_text(size = 12),
+                  legend.title = element_text(size = 12))
+        plot(p)
+        # ggsave(filename = paste0(plots_directory, "/top10_regulons_",
+        #                          params$diff_exp_test,
+        #                          "_celltype_condition_dotplot.pdf"),
+        #        width = 8, height = 6)
+        
+    } else {
+        "top_n_cellsubtype_condition is empty"
+    }
+} else {
+    "celltype_condition parameter is set to FALSE and no condition variable provided"
+}
+```
+
+
+
+
+
+# Save data
+
+```{r}
+write_rds(x = seurat_object, file = paste0(params$results_directory, "/scenic_seurat_", params$datatype, ".rds"))
+```
+
+
+# Run time
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+<!-- # CPU and RAM Usage -->
+
+<!-- ```{r fig.width = 12, fig.height = 4} -->
+<!-- job_id <- commandArgs(trailingOnly = TRUE)[2] -->
+<!-- if (job_id != "local") { -->
+<!--     job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv") -->
+<!--     if (file.exists(job_log)) { -->
+<!--         p1 <- read_tsv(file = job_log) %>% -->
+<!--           gather("Process", "Usage", -`#TIME`, -REQUESTED) %>% -->
+<!--           group_by(`#TIME`) %>% -->
+<!--           ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) + -->
+<!--               geom_line() + -->
+<!--               ggtitle("CPU") + -->
+<!--               theme(legend.position = "none", validate = TRUE) -->
+<!--         p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>% -->
+<!--           gather("Process", "Usage", -`#TIME`, -REQUESTED) %>% -->
+<!--           group_by(`#TIME`) %>% -->
+<!--           ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) + -->
+<!--               geom_line() + -->
+<!--               ggtitle("Memory") -->
+<!--         my_legend <- get_legend(p2) -->
+<!--         p2 <- p2 + theme(legend.position = "none", validate = TRUE) -->
+<!--         plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2)) -->
+<!--     } -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+

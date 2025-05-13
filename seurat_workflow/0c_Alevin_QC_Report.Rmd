@@ -1,0 +1,398 @@
+---
+title: "`r commandArgs(trailingOnly = TRUE)[4]` - Alevin QC Report"
+description: description
+author:
+  - "`r paste0('alevinQC (v', utils::packageVersion('alevinQC'), ')')`"
+  - "Modified by - Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+<style>
+   tbody tr:nth-child(odd){
+    background-color: #D6E0F5;
+  }
+</style>
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())    # base_family = "Arial"))
+options(scipen = 9999)
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+<!-- ```{r run-time-tibble} -->
+<!-- process_time <- tibble() -->
+<!-- stop_the_clock <- function(chunk_name = "unnamed") { -->
+<!--    temp <- tibble::tibble(Code_chunk = chunk_name, -->
+<!--                            Start_time = start_time, -->
+<!--                            Stop_time = Sys.time(), -->
+<!--                            Run_time = difftime(Stop_time, Start_time, units = "mins") -->
+<!--                            ) -->
+<!--     process_time <- dplyr::bind_rows(process_time, temp) -->
+<!--     return(process_time) -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+## Parameters
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+if (is.na(params_file)) {
+    params_file <- "pipeline_R_params.R"
+}
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+Get the name of the machine that this is running on.  If running on my local desktop ("mentok"), then append to the `raw_path` variable.
+
+```{r is-local}
+local_path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if (curr_machine == "mentok") {
+    local_path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+local_path_mod
+```
+
+```{r adjust-path}
+raw_path <- paste0(local_path_mod, raw_path)
+raw_path
+```
+
+```{r}
+my_sample <- commandArgs(trailingOnly = TRUE)[4]
+my_sample
+```
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(alevinQC)
+library(cowplot)
+```
+
+
+
+
+
+
+# My Changes ...
+
+This script uses the package `alevinQC` and borrows heavily from their template `.Rmd` script. I
+have made some changes to better suit my workflow. First off, I don't use `alevin`'s filtering and use
+the flags `--keepCBFraction 1`, `--maxNumBarcodes 737000`, and `--freqThreshold 0`, due to other
+processing reasons. And so the `alevinQC` functions can be quite slow and not terribly useful, with
+all the the droplets with low UMI (eg. <10 UMI etc.). To speed things up and get some more useful
+plots, I temperarily reset `alevin$cbTable$inFirstWhiteList` to `FALSE` if the `totalUMICount` is
+less than 200.
+
+
+
+
+
+
+
+# Read in data
+
+```{r load-data}
+## Read input files
+message("Reading Alevin output files...")
+alevin <- readAlevinQC(baseDir = paste0(raw_path, my_sample))
+```
+
+
+# Version info for alevin run
+
+```{r, warning = FALSE}
+suppressWarnings({
+  knitr::kable(
+    alevin$versionTable
+  )
+})
+```
+
+# Summary tables
+
+## Full set of cell barcodes
+
+```{r, warning = FALSE}
+message("Generating summary tables...")
+suppressWarnings({
+  knitr::kable(
+    alevin$summaryTables$fullDataset
+  )
+})
+```
+
+## Initial whitelist
+
+```{r, warning = FALSE}
+suppressWarnings({
+  knitr::kable(
+    alevin$summaryTables$initialWhitelist
+  )
+})
+```
+
+## Final whitelist
+
+```{r}
+suppressWarnings({
+  knitr::kable(
+    alevin$summaryTables$finalWhitelist
+  )
+})
+```
+
+
+# Knee plot
+
+**alveninQC blurb**
+
+The knee plot displays the number of times each cell barcode is observed, in
+decreasing order. By finding a 'knee' in this plot, Alevin determines a
+threshold (indicated in the plot) that defines an initial 'whitelist' - a set
+of cell barcodes that likely represent non-empty droplets - and distinguishes
+them from the background. The initial whitelisting is only performed if no
+external whitelist is provided when running alevin. In the figure below, red
+indicates cell barcodes in the initial whitelist, black indicates all other
+cell barcodes.
+
+```{r}
+message("Generating knee plot...")
+alevin$cbTable %>%
+    mutate(inFirstWhiteList = if_else(totalUMICount > 200, TRUE, FALSE)) %>%
+    plotAlevinKneeRaw() +
+        geom_line(size = 3, aes(color = inFirstWhiteList)) +
+        scale_color_manual(values = c(`TRUE` = "red", `FALSE` = "black"))
+```
+
+# Cell barcode error correction and merging with initial whitelist
+
+**alveninQC blurb**
+
+Once the initial set of whitelisted cell barcodes is defined, Alevin goes
+through the remaining cell barcodes. If a cell barcode is similar enough to a
+whitelisted cell barcode, it will be corrected and the reads will be added to
+those of the whitelisted one. The figure below shows the original frequency of
+the whitelisted barcodes vs the frequency after this correction. The reads
+corresponding to cell barcodes that can not be corrected to a whitelisted
+barcode are discarded.
+
+```{r}
+message("Generating barcode collapsing plot...")
+alevin$cbTable %>%
+    mutate(inFirstWhiteList = if_else(totalUMICount > 200, TRUE, FALSE)) %>%
+    plotAlevinBarcodeCollapse()
+```
+
+# Quantification
+
+**alveninQC blurb**
+
+After cell barcode collapsing, Alevin estimates the UMI count for each cell and
+gene. Following quantification, an additional cell barcode whitelisting is
+performed with the aim of extracting good quality cells, using not only the
+barcode frequency but also other features such as the fraction of mapped reads,
+the duplication rate and the average gene count. The plots below show the
+association between the cell barcode frequency (the number of observed reads
+corresponding to a cell barcode), the total UMI count and the number
+of detected genes. The cell barcodes are colored by whether or not they
+are included in the final whitelist.
+
+These figures can give an indication of whether the sequenced reads actually
+align to genes, as well as the duplication rate and the degree of saturation.
+For many droplet data sets, the association between the barcode frequency and
+the total UMI count is rougly linear, while the association of any of these with
+the number of detected genes often deviates from linearity, if a small subset of
+the genes are assigned a large fraction of the UMI counts.
+
+```{r fig.width = 10, fig.height = 4}
+message("Generating quantification summary plot...")
+alevin$cbTable %>%
+    mutate(inFirstWhiteList = if_else(totalUMICount > 200, TRUE, FALSE)) %>%
+    plotAlevinQuant(colName = "inFinalWhiteList",
+                    cbName = "final whitelist")
+```
+
+
+# Knee plot, number of detected genes
+
+**alveninQC blurb**
+
+Similarly to the knee plot that was used to select the initial cell barcode
+whitelist, the plot below shows the number of detected genes for each cell
+barcode included in the initial whitelist, in decreasing order.
+
+```{r}
+message("Generating knee plot for nbr genes...")
+alevin$cbTable %>%
+    mutate(inFirstWhiteList = if_else(totalUMICount > 200, TRUE, FALSE)) %>%
+    plotAlevinKneeNbrGenes()
+```
+
+# Selected summary distributions
+
+**alveninQC blurb**
+
+The histograms below show the distributions of the deduplication rates
+(number of deduplicated UMI counts/number of mapped reads) and the
+mapping rates, across the cells retained in the initial whitelist.
+
+```{r, fig.width = 10, fig.height = 4}
+message("Generating summary distribution plots...")
+cowplot::plot_grid(
+    alevin$cbTable %>%
+        mutate(inFirstWhiteList = if_else(totalUMICount > 200, TRUE, FALSE)) %>%
+        plotAlevinHistogram(plotVar = "dedupRate",
+                            axisLabel = "Deduplication rate",
+                            colName = "inFinalWhiteList",
+                            cbName = "final whitelist") +
+            ylim(0, 1),
+    alevin$cbTable %>%
+        mutate(inFirstWhiteList = if_else(totalUMICount > 200, TRUE, FALSE)) %>%
+        plotAlevinHistogram(plotVar = "mappingRate",
+                            axisLabel = "Mapping rate",
+                            colName = "inFinalWhiteList",
+                            cbName = "final whitelist") +
+            ylim(0, 1),
+  nrow = 1
+)
+```
+
+
+
+
+
+
+# Run time
+
+<!-- ```{r run-times} -->
+<!-- process_time -->
+<!-- ``` -->
+
+<!-- ```{r plot-run-times, fig.width = 10, fig.height = 5} -->
+<!-- process_time$Code_chunk <- factor(process_time$Code_chunk, levels = rev(process_time$Code_chunk)) -->
+<!-- process_time %>% -->
+<!--     ggplot(aes(x = Code_chunk, y = Run_time, fill = Run_time)) + -->
+<!--     geom_col(width = 0.8) + -->
+<!--     xlab("Code Chunk") + -->
+<!--     ylab("Run Time (mins)") + -->
+<!--     coord_flip() -->
+<!-- ``` -->
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (is.na(job_id)) {
+    job_id <- "interactive"
+}
+if (job_id != "local" && job_id != "interactive") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

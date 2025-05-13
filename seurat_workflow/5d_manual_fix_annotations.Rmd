@@ -1,0 +1,1178 @@
+---
+title: "Manual annotation of integrated data"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo=FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly=T)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+<!-- ```{r params} -->
+<!-- params_file <- commandArgs(trailingOnly = TRUE)[3] -->
+<!-- params_path <- paste0("../src/param_files/", params_file) -->
+<!-- print(paste0("The params file is :   ", params_path)) -->
+<!-- ``` -->
+
+<!-- ```{r, class.source = 'fold-hide', code = readLines(params_path)} -->
+<!-- ``` -->
+
+
+
+```{r params-manual}
+# source("/mnt/scratch/cgat_cluster/proj066/src/param_files/pipeline_R_params_local.R")
+source("param_files/pipeline_R_params__PUBnofacs_v1_cb.R")
+```
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+```
+
+
+## Load the data
+
+
+
+```{r load-data}
+if (remove_doublets == FALSE && remove_ambient == FALSE) {
+    path_modifier <- ""
+}
+if (remove_doublets == TRUE && remove_ambient == FALSE) {
+    path_modifier <- "_doublets_removed"
+}
+if (remove_doublets == FALSE && remove_ambient == TRUE) {
+    path_modifier <- "_ambient_removed"
+}
+if (remove_doublets == TRUE && remove_ambient == TRUE) {
+    path_modifier <- "_doublets_removed_ambient_removed"
+}
+integrated <- read_rds(file = paste0(objects_path,
+                                  dataset, "_",
+                                  input_type, "_",
+                                  normalization, "_",
+                                  integration, "_",
+                                  "integrated_seurat",
+                                  path_modifier,
+                                  "_diet.rds")
+                          )
+```
+
+
+<!-- ```{r load-data} -->
+<!-- tsne_embeddings <- read_rds(file = paste0(objects_path, -->
+<!--                                 dataset, "_", -->
+<!--                                 input_type, "_", -->
+<!--                                 normalization, "_", -->
+<!--                                 integration, "_", -->
+<!--                                 "integrated_tsne_embeddings_", -->
+<!--                                 path_modifier, -->
+<!--                                 ".rds") -->
+<!--                           ) -->
+
+<!-- all_cluster_markers <- read_csv(file = paste0(objects_path, -->
+<!--                                 "../markers/", -->
+<!--                                 dataset, "_", -->
+<!--                                 input_type, "_", -->
+<!--                                 normalization, "_", -->
+<!--                                 integration, "_", -->
+<!--                                 "cluster_markers", -->
+<!--                                 path_modifier, -->
+<!--                                 ".csv") -->
+<!--                                 ) -->
+<!-- ``` -->
+
+
+
+
+<!-- ## Add tSNE to main object -->
+
+<!-- ```{r} -->
+<!-- tsnes <- names(tsne_embeddings@reductions) %>% str_subset("tsne") %>% str_subset("pcs") -->
+<!-- for (tsne in tsnes) { -->
+<!--     integrated@reductions[[tsne]] <- tsne_embeddings@reductions[[tsne]] -->
+<!-- } -->
+<!-- integrated@reductions[["tsne"]] <- tsne_embeddings@reductions[["tsne"]] -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- rm(tsne_embeddings) -->
+<!-- gc() -->
+<!-- ``` -->
+
+
+
+
+
+# Ploting Functions
+
+```{r}
+
+double_dimplot <- function(object, ...) {
+    p_list <- list()
+    for (my_reduction in c("umap", "tsne")) {
+        p_list[[my_reduction]] <- Seurat::DimPlot(object = integrated, 
+                                          group.by = "RNA_snn_res.20",
+                                          pt.size = 0.01,
+                                          raster = FALSE,
+                                          reduction = my_reduction,
+                                          label = FALSE,
+                                          label.box = TRUE,
+                                          repel = TRUE) +
+                                    Seurat::NoAxes() +
+                                    ggplot2::coord_fixed()
+    }
+    
+    my_legend <- get_legend(p_list[["umap"]])
+    for (my_reduction in c("umap", "tsne")) {
+        p_list[[my_reduction]] <- p_list[[my_reduction]] + Seurat::NoLegend()
+    }
+    
+    for (i in seq_along(p_list)) {
+    	p_list[[i]]$layers[[1]]$aes_params$alpha = .1
+    	# plot(p_list[[i]])
+    }
+    # my_plot <- plot_grid(plotlist = p_list, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22)
+    my_plot <- plot_grid(plotlist = p_list, ncol = 2, rel_widths = c(3, 3), labels = c("UMAP", "tSNE"), label_size = 22)
+    plot(my_plot)
+}
+
+double_featureplot <- function(object, features, ...) {
+    p_list <- list()
+    for (my_reduction in c("umap", "tsne")) {
+        p_list[[my_reduction]] <- Seurat::FeaturePlot(object = integrated,
+                                                      features = gene,
+                                                      pt.size = 0.1,
+                                                      cols = c("lightsteelblue2", "black"),
+                                                      reduction = my_reduction,
+                                                      raster = FALSE,
+                                                      order = TRUE,
+                                                      min.cutoff = 0,
+                                                      max.cutoff = 2) +
+                                    Seurat::NoAxes() +
+                                    ggplot2::coord_fixed()
+    }
+    my_legend <- get_legend(p_list[["umap"]])
+    for (my_reduction in c("umap", "tsne")) {
+        p_list[[my_reduction]] <- p_list[[my_reduction]] + Seurat::NoLegend()
+    }
+    
+    for (i in seq_along(p_list)) {
+    	p_list[[i]]$layers[[1]]$aes_params$alpha = .1
+    	# plot(p_list[[i]])
+    }
+    # my_plot <- plot_grid(plotlist = p_list, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22)
+    my_plot <- plot_grid(plotlist = p_list, ncol = 2, rel_widths = c(3, 3), labels = c("UMAP", "tSNE"), label_size = 22)
+    plot(my_plot)
+}
+```
+
+
+
+
+
+
+
+# Setup new annotation table
+
+
+
+
+```{r}
+corrected_annotations <- integrated@meta.data %>%
+    rownames_to_column("cell_id") %>%
+    select(cell_id, annotation_broad_cell_type, annotation_broad_cell_type_ext) %>%
+    mutate(annotation_broad_cell_type_ext = as.character(annotation_broad_cell_type_ext),
+           annotation_broad_cell_type_ext_fix = annotation_broad_cell_type_ext
+           )
+head(corrected_annotations)
+```
+
+
+To change a given annotation, write over the _fix column.
+
+```{r}
+# corrected_annotations <- corrected_annotations %>%
+#     mutate(annotation_broad_cell_type_ext_fix = if_else(cell_id %in% my_cells, "new_ann", annotation_broad_cell_type_ext_fix))
+```
+
+
+
+
+
+
+
+
+
+
+# Plot the data
+
+
+
+```{r fig.width = 20, fig.height = 10}
+double_dimplot(object = integrated)
+```
+
+
+
+```{r fig.width = 20, fig.height = 10}
+double_dimplot(object = integrated, label = TRUE)
+```
+
+
+
+
+
+
+
+## Mixed/Unknown cell types
+
+
+
+
+```{r}
+colnames(integrated@meta.data)
+```
+
+
+
+### FAN Markers
+
+Cholinergic	cells that produce and release the fast acting neurotransmitter acetylcholine	VAChT	ChAT	CG31221	CG14762	ChT
+Glutamatergic	cells that produce and release the fast acting neurotransmitter glutamate	VGlut	CG46448
+GABAergic	cells that produce and release the fast acting neurotransmitter GABA	Gad1	VGAT	CG14989
+
+
+```{r fig.width = 20, fig.height = 10}
+for (gene in c("VAChT")) {
+    double_featureplot(object = integrated, features = gene)
+}
+```
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+for (gene in c("VAChT", "ChAT", "CG31221", "CG14762", "ChT", "VGlut", "CG46448", "Gad1", "VGAT", "CG14989")) {
+    double_featureplot(object = integrated, features = gene)
+}
+```
+
+
+
+### Mono Markers
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+for (gene in c("Vmat", "ple", "DAT", "SerT", "Trh", "Tdc2", "Tbh")) {
+    double_featureplot(object = integrated, features = gene)
+}
+```
+
+
+
+### Dev Markers
+
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+for (gene in c("Imp", "mamo", "br", "dati", "pros")) {
+    double_featureplot(object = integrated, features = gene)
+}
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+for (gene in c("Imp", "dati")) {
+    double_featureplot(object = integrated, features = gene)
+}
+```
+
+
+
+
+
+
+
+
+<!-- ### Glia Markers -->
+
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- for (gene in c("repo", "Adh", "alrm", "wrapper", "zyd", "trol", "Tret1-1", "Mdr65")) { -->
+<!--     double_featureplot(object = integrated, features = gene) -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+
+
+
+### Module Scores
+
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+for (gene in c("modulescore_Cholinergic1",
+               "modulescore_Glutamatergic1",
+               "modulescore_GABAergic1",
+               "modulescore_Kenyon_cell1",
+               "modulescore_Monoaminergic1")) {
+    double_featureplot(object = integrated, features = gene)
+}
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+p1 <- DimPlot(object = integrated, pt.size = 0.01, group.by = "RNA_snn_res.20", raster = FALSE, reduction = "tsne", label = TRUE, label.box = TRUE) + NoLegend() + NoAxes() + coord_fixed()
+p2 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type", pt.size = 0.01, raster = FALSE, reduction = "tsne") + NoAxes() + coord_fixed()
+my_legend <- get_legend(p2)
+p2 <- p2 + NoLegend()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), label_size = 22)
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+p1 <- DimPlot(object = integrated, pt.size = 0.01, group.by = "RNA_snn_res.20", raster = FALSE, reduction = "tsne", label = TRUE, label.box = FALSE) + NoLegend() + NoAxes() + coord_fixed()
+p2 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type", pt.size = 0.01, raster = FALSE, reduction = "tsne") + NoAxes() + coord_fixed()
+my_legend <- get_legend(p2)
+p2 <- p2 + NoLegend()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), label_size = 22)
+```
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+p1 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type", pt.size = 0.01, raster = FALSE, reduction = "tsne") + NoLegend() + NoAxes() + coord_fixed()
+p2 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type_ext", pt.size = 0.01, raster = FALSE, reduction = "tsne") + NoAxes() + coord_fixed()
+my_legend <- get_legend(p2)
+p2 <- p2 + NoLegend()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), label_size = 22)
+```
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+p1 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type", pt.size = 0.01, raster = FALSE, reduction = "tsne") + NoLegend() + NoAxes() + coord_fixed()
+p2 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type_ext", pt.size = 0.01, raster = FALSE, reduction = "tsne") + NoAxes() + coord_fixed()
+my_legend <- get_legend(p2)
+p2 <- p2 + NoLegend()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+
+plot(p1)
+plot(p2)
+```
+
+
+
+# Mixed clusters
+
+
+<!-- garbage_clusters = 264,101,263,227,213 -->
+
+
+## ...
+
+<!-- + clusters look to be half gabaergic and half glutamatergic -->
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- my_clusters <- c(264,101,263,227,213) -->
+<!-- Idents(integrated) <- "RNA_snn_res.20" -->
+<!-- cluster_higlight <- WhichCells(object = integrated, idents = my_clusters) -->
+<!-- p_list <- list() -->
+<!-- for (my_red in c("umap", "tsne")) { -->
+<!--     p_list[[my_red]] <- DimPlot(object = integrated, -->
+<!--               cells.highlight = cluster_higlight, -->
+<!--               cols = "lightsteelblue2", -->
+<!--               cols.highlight = "black", -->
+<!--               sizes.highlight = 0.1, -->
+<!--               pt.size = 0.01, -->
+<!--               raster = FALSE, -->
+<!--               reduction = my_red) + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         coord_fixed() -->
+<!-- } -->
+<!-- for (i in seq_along(p_list)) { -->
+<!-- 	p_list[[i]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- 	# plot(p_list[[i]]) -->
+<!-- } -->
+
+<!-- my_title <- ggdraw() + draw_label(paste("Cluster ", my_clusters, ":"), fontface = "bold", size = 30, hjust = 0, x = 0.01) -->
+<!-- my_plot <- plot_grid(plotlist = p_list, ncol = 2, labels = c("UMAP", "tSNE"), label_size = 22) -->
+<!-- plot_grid(my_title, my_plot, ncol = 1, align = "hv", axis = "tbl", rel_heights = c(0.1, 1)) -->
+<!-- ``` -->
+
+
+
+<!-- + looking at a higher resolution we can split the halves -->
+<!-- + at res.40, cluster 131 is glut and 130 is gaba -->
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- p_list <- list() -->
+<!-- for (my_red in c("merged_clusters", "RNA_snn_res.16")) { -->
+<!--     p_list[[my_red]] <- DimPlot(object = integrated, -->
+<!--                 group.by = my_red, -->
+<!--                 pt.size = 0.01, -->
+<!--                 raster = FALSE, -->
+<!--                 label = TRUE, -->
+<!--                 reduction = "tsne") + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         coord_fixed() -->
+<!-- } -->
+<!-- plot_grid(plotlist = p_list, ncol = 2) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- unique(corrected_annotations$annotation_broad_cell_type_ext_fix) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- Idents(integrated) <- integrated@meta.data[["RNA_snn_res.16"]] -->
+<!-- cells_highlight <- WhichCells(object = integrated, idents = c(130)) -->
+<!-- corrected_annotations <- corrected_annotations %>% -->
+<!--     mutate(annotation_broad_cell_type_ext_fix = if_else(cell_id %in% cells_highlight, "GABAergic", annotation_broad_cell_type_ext_fix)) -->
+<!-- Idents(integrated) <- integrated@meta.data[["merged_clusters"]] -->
+<!-- ``` -->
+
+
+
+
+
+<!-- ## Cluster 22 -->
+
+<!-- + clusters 22 have mixed FAN identities,  half cholinergic and half glutamatergic -->
+
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- my_cluster <- 22 -->
+<!-- cluster_higlight <- WhichCells(object = integrated, idents = my_cluster) -->
+<!-- p_list <- list() -->
+<!-- for (my_red in c("umap", "tsne")) { -->
+<!--     p_list[[my_red]] <- DimPlot(object = integrated, -->
+<!--               cells.highlight = cluster_higlight, -->
+<!--               cols = "lightsteelblue2", -->
+<!--               cols.highlight = "black", -->
+<!--               sizes.highlight = 0.1, -->
+<!--               pt.size = 0.01, -->
+<!--               raster = FALSE, -->
+<!--               reduction = my_red) + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         coord_fixed() -->
+<!-- } -->
+<!-- my_title <- ggdraw() + draw_label(paste("Cluster ", my_cluster, ":"), fontface = "bold", size = 30, hjust = 0, x = 0.01) -->
+<!-- my_plot <- plot_grid(plotlist = p_list, ncol = 2, labels = c("UMAP", "tSNE"), label_size = 22) -->
+<!-- plot_grid(my_title, my_plot, ncol = 1, align = "hv", axis = "tbl", rel_heights = c(0.1, 1)) -->
+<!-- ``` -->
+
+
+
+<!-- + looking at a higher resolution we can split the halves -->
+<!-- + at res.16, cluster 39 is glut and 105 is achol -->
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- p_list <- list() -->
+<!-- for (my_red in c("merged_clusters", "RNA_snn_res.16")) { -->
+<!--     p_list[[my_red]] <- DimPlot(object = integrated, -->
+<!--                 group.by = my_red, -->
+<!--                 pt.size = 0.01, -->
+<!--                 raster = FALSE, -->
+<!--                 label = TRUE, -->
+<!--                 reduction = "tsne") + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         coord_fixed() -->
+<!-- } -->
+<!-- plot_grid(plotlist = p_list, ncol = 2) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- Idents(integrated) <- integrated@meta.data[["RNA_snn_res.16"]] -->
+<!-- cells_highlight <- WhichCells(object = integrated, idents = c(105)) -->
+<!-- corrected_annotations <- corrected_annotations %>% -->
+<!--     mutate(annotation_broad_cell_type_ext_fix = if_else(cell_id %in% cells_highlight, "Cholinergic", annotation_broad_cell_type_ext_fix)) -->
+<!-- Idents(integrated) <- integrated@meta.data[["merged_clusters"]] -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+# neuroendocrine cells
+
+
+
+```{r fig.width=21, fig.height=14}
+
+p1 <- DimPlot(object = integrated, 
+              pt.size = 0.01, 
+              group.by = "RNA_snn_res.20", 
+              raster = FALSE, 
+              reduction = "tsne", 
+              label = TRUE, 
+              label.box = FALSE) + 
+    NoLegend() + 
+    NoAxes() + 
+    coord_fixed()
+
+p2 <- FeaturePlot(object = integrated,
+               features = "dimm",
+               max.cutoff = 1,
+               pt.size = 0.6, 
+               cols = c("lightsteelblue2", "black"),
+               reduction = "tsne",
+               raster = FALSE,
+               order = TRUE) + 
+    NoLegend() + 
+    NoAxes() +
+    coord_fixed()
+    
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+plot(p2)
+```
+
+
+
+```{r fig.width=21, fig.height=14}
+
+p1 <- DimPlot(object = integrated, 
+              pt.size = 0.01, 
+              group.by = "RNA_snn_res.40", 
+              raster = FALSE, 
+              reduction = "tsne", 
+              label = TRUE, 
+              label.box = FALSE) + 
+    NoLegend() + 
+    NoAxes() + 
+    coord_fixed()
+
+p2 <- FeaturePlot(object = integrated,
+               features = "dimm",
+               max.cutoff = 1,
+               pt.size = 0.6, 
+               cols = c("lightsteelblue2", "black"),
+               reduction = "tsne",
+               raster = FALSE,
+               order = TRUE) + 
+    NoLegend() + 
+    NoAxes() +
+    coord_fixed()
+    
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+plot(p2)
+```
+
+
+Now we identify the neuropeptide genes that we detected at least 1000 unique transcripts.
+
+```{r warning=FALSE, message=FALSE, message=FALSE, warning=FALSE}
+np_genes <- read_tsv("../../../aallen/gene_lists/gene_sets/neuropeptides.tsv",
+    col_names = "gene") %>%
+    pull(gene)
+exp_np_genes <- FetchData(object = integrated, vars = np_genes, slot = "counts") %>%
+    rownames_to_column("cell_id") %>%
+    gather("gene", "expression", -cell_id) %>%
+    group_by(gene) %>%
+    mutate(total_umi = sum(expression)) %>%
+    filter(total_umi > 1000) %>%
+    pull(gene) %>%
+    unique()
+exp_np_genes
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=21, fig.height=14}
+p_list <- list()
+genes <- exp_np_genes
+for (i in seq_along(genes)) {
+    p_list[[i]] <- FeaturePlot(object = integrated,
+                               features = genes[[i]],
+                               min.cutoff = 4,
+                               max.cutoff = 6,
+                               pt.size = 0.6, 
+                               cols = c("lightsteelblue2", "black"),
+                               reduction = "tsne",
+                               raster = FALSE,
+                               order = TRUE) +
+                    coord_fixed()
+}
+for (i in seq_along(p_list)) {
+	p_list[[i]]$layers[[1]]$aes_params$alpha = .2
+	plot(p_list[[i]])
+}
+# plot_grid(plotlist = p_list,  ncol = 3)
+```
+
+
+
+<!-- + Cluster 96 seems to be neuro-endocrine. -->
+<!-- + not sure if they include both the LNC and MNC (or other types) -->
+
+
+```{r}
+Idents(integrated) <- "RNA_snn_res.40"
+neuroendocrine_cells <- WhichCells(object = integrated, idents = c(4,235,516,506,213,210,335,304,524,412))
+corrected_annotations <- corrected_annotations %>%
+    mutate(annotation_broad_cell_type_ext_fix = if_else(cell_id %in% neuroendocrine_cells, "Neuroendocrine", annotation_broad_cell_type_ext_fix))
+```
+
+
+
+
+<!-- + cluster 96 appears to include motor neurons -->
++ Proc+/twit+/rhea+
++ and VGlut+ but CG46448-
++ CG46448 is the gene that used to be annotated as an exon of VGlut, but no longer
++ my guess is that CG46448 marks glutamatergic interneurons
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+for (gene in c("Proc", "twit", "rhea", "VGlut", "CG46448")) {
+    p1 <- FeaturePlot(object = integrated,
+                      features = gene,
+                      pt.size = 0.6,
+                      cols = c("lightsteelblue2", "black"),
+                      reduction = "umap",
+                      order = TRUE,
+                      min.cutoff = 2,
+                      max.cutoff = 4,
+                      raster = FALSE) +
+            NoLegend() +
+            NoAxes() +
+            coord_fixed()
+    p2 <- FeaturePlot(object = integrated,
+                      features = gene,
+                      pt.size = 0.6,
+                      cols = c("lightsteelblue2", "black"),
+                      reduction = "tsne",
+                      order = TRUE,
+                      min.cutoff = 2,
+                      max.cutoff = 4,
+                      raster = FALSE) +
+            NoAxes() +
+            coord_fixed()
+    my_legend <- get_legend(p2)
+    p2 <- p2 + NoLegend()
+    
+    p1[[1]]$layers[[1]]$aes_params$alpha = .1
+    p2[[1]]$layers[[1]]$aes_params$alpha = .1
+    print(plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22))
+}
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+for (gene in c("modulescore_Glutamatergic1", "modulescore_Motor_neurons1")) {
+    p1 <- FeaturePlot(object = integrated,
+                      features = gene,
+                      pt.size = 0.1,
+                      cols = c("lightsteelblue2", "black"),
+                      reduction = "umap",
+                      order = TRUE,
+                      min.cutoff = 0,
+                      max.cutoff = 2,
+                      raster = FALSE) +
+            NoLegend() +
+            NoAxes() +
+            coord_fixed()
+    p2 <- FeaturePlot(object = integrated,
+                      features = gene,
+                      pt.size = 0.1,
+                      cols = c("lightsteelblue2", "black"),
+                      reduction = "tsne",
+                      order = TRUE,
+                      min.cutoff = 0,
+                      max.cutoff = 2,
+                      raster = FALSE) +
+            NoAxes() +
+            coord_fixed()
+    my_legend <- get_legend(p2)
+    p2 <- p2 + NoLegend()
+    p1[[1]]$layers[[1]]$aes_params$alpha = .1
+    p2[[1]]$layers[[1]]$aes_params$alpha = .1
+    print(plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22))
+}
+```
+
+
+
+
+<!-- + looking at a higher resolution we can split the halves -->
+<!-- + at res.50, cluster 287 are the motor neurons -->
+
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- p_list <- list() -->
+<!-- for (my_red in c("merged_clusters", "RNA_snn_res.50")) { -->
+<!--     p_list[[my_red]] <- DimPlot(object = integrated, -->
+<!--                 group.by = my_red, -->
+<!--                 pt.size = 0.01, -->
+<!--                 raster = FALSE, -->
+<!--                 label = TRUE, -->
+<!--                 reduction = "tsne") + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         coord_fixed() -->
+<!-- } -->
+<!-- plot_grid(plotlist = p_list, ncol = 2) -->
+<!-- ``` -->
+
+
+
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- my_clusters <- c(19,262) -->
+<!-- Idents(integrated) <- integrated@meta.data[["RNA_snn_res.20"]] -->
+
+<!-- cluster_higlight <- WhichCells(object = integrated, idents = my_clusters) -->
+<!-- p_list <- list() -->
+<!-- for (my_red in c("umap", "tsne")) { -->
+<!--     p_list[[my_red]] <- DimPlot(object = integrated, -->
+<!--               cells.highlight = cluster_higlight, -->
+<!--               cols = "lightsteelblue2", -->
+<!--               cols.highlight = "black", -->
+<!--               sizes.highlight = 0.1, -->
+<!--               pt.size = 0.01, -->
+<!--               raster = FALSE, -->
+<!--               reduction = my_red) + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         coord_fixed() -->
+<!-- } -->
+<!-- my_title <- ggdraw() + draw_label(paste("Cluster ", my_cluster, ":"), fontface = "bold", size = 30, hjust = 0, x = 0.01) -->
+<!-- my_plot <- plot_grid(plotlist = p_list, ncol = 2, labels = c("UMAP", "tSNE"), label_size = 22) -->
+<!-- plot_grid(my_title, my_plot, ncol = 1, align = "hv", axis = "tbl", rel_heights = c(0.1, 1)) -->
+<!-- Idents(integrated) <- integrated@meta.data[["merged_clusters"]] -->
+<!-- ``` -->
+
+
+```{r}
+Idents(integrated) <- integrated@meta.data[["RNA_snn_res.20"]]
+cells_highlight <- WhichCells(object = integrated, idents = c(11,249))
+corrected_annotations <- corrected_annotations %>%
+    mutate(annotation_broad_cell_type_ext_fix = if_else(cell_id %in% cells_highlight, "Motor_neuron", annotation_broad_cell_type_ext_fix))
+```
+
+
+
+
+
+# miss-ann KC
+
+
+```{r warning=FALSE, message=FALSE, fig.width = 20, fig.height = 10}
+p1 <- DimPlot(object = integrated, pt.size = 0.01, group.by = "RNA_snn_res.6", raster = FALSE, reduction = "umap", label = TRUE, label.box = FALSE) + NoLegend() + NoAxes() + coord_fixed()
+p2 <- DimPlot(object = integrated, pt.size = 0.01, group.by = "RNA_snn_res.6", raster = FALSE, reduction = "tsne", label = TRUE, label.box = FALSE) + NoLegend() + NoAxes() + coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot_grid(p1, p2, ncol = 2, rel_widths = c(3, 3), label_size = 22)
+```
+
+
+
+
+
+```{r}
+Idents(integrated) <- "RNA_snn_res.6"
+markers_cluster_140 <- FindMarkers(object = integrated, ident.1 = 140, logfc.threshold = 1, only.pos = TRUE)
+```
+
+```{r}
+options(scipen = 1)
+markers_cluster_140 %>% 
+	filter(p_val_adj < 0.05) %>% 
+	arrange(desc(avg_log2FC))
+```
+
+
+```{r}
+Idents(integrated) <- integrated@meta.data[["RNA_snn_res.6"]]
+cells_highlight <- WhichCells(object = integrated, idents = c(140))
+corrected_annotations <- corrected_annotations %>%
+    mutate(annotation_broad_cell_type_ext_fix = if_else(cell_id %in% cells_highlight, "Cholinergic", annotation_broad_cell_type_ext_fix))
+```
+
+
+
+
+
+
+# Add fixed meta data
+
+
+
+```{r fig.width = 20, fig.height = 10}
+integrated <- AddMetaData(object = integrated, metadata = corrected_annotations$annotation_broad_cell_type_ext_fix, col.name = "annotation_broad_cell_type_ext_fix")
+p1 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type_ext", pt.size = 0.01, raster = FALSE, reduction = "tsne", label = TRUE, label.box = TRUE, repel = TRUE) + NoLegend() + NoAxes() + coord_fixed()
+p2 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type_ext_fix", pt.size = 0.01, raster = FALSE, reduction = "tsne", label = TRUE, label.box = TRUE, repel = TRUE) + NoAxes() + coord_fixed()
+my_legend <- get_legend(p2)
+p2 <- p2 + NoLegend()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22)
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+integrated <- AddMetaData(object = integrated, metadata = corrected_annotations$annotation_broad_cell_type_ext_fix, col.name = "annotation_broad_cell_type_ext_fix")
+p1 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type_ext_fix", pt.size = 0.01, raster = FALSE, reduction = "umap", label = TRUE, label.box = TRUE, repel = TRUE) + NoLegend() + NoAxes() + coord_fixed()
+p2 <- DimPlot(object = integrated, group.by = "annotation_broad_cell_type_ext_fix", pt.size = 0.01, raster = FALSE, reduction = "tsne", label = TRUE, label.box = TRUE, repel = TRUE) + NoAxes() + coord_fixed()
+my_legend <- get_legend(p2)
+p2 <- p2 + NoLegend()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22)
+```
+
+
+
+
+
+
+
+<!-- # Check Hsp -->
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- p1 <- FeaturePlot(object = integrated, -->
+<!--                     features = gene, -->
+<!--                     pt.size = 1, -->
+<!--                     cols = c("lightsteelblue2", "black"), -->
+<!--                     reduction = "umap", -->
+<!--                     order = TRUE, -->
+<!--                     min.cutoff = 2) + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         coord_fixed() -->
+<!-- p2 <- FeaturePlot(object = integrated, -->
+<!--                     features = gene, -->
+<!--                     pt.size = 1, -->
+<!--                     cols = c("lightsteelblue2", "black"), -->
+<!--                     reduction = "tsne", -->
+<!--                     order = TRUE, -->
+<!--                     min.cutoff = 2) + -->
+<!--         NoAxes() + -->
+<!--         coord_fixed() -->
+<!-- my_legend <- get_legend(p2) -->
+<!-- p2 <- p2 + NoLegend() -->
+
+<!-- p1[[1]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- p2[[1]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- print(plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22)) -->
+<!-- ``` -->
+
+
+
+
+
+
+
+<!-- # nUMI, nGene -->
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- gene <- "nCount_RNA" -->
+<!-- p1 <- FeaturePlot(object = integrated, -->
+<!--                   features = gene, -->
+<!--                   max.cutoff = 8000, -->
+<!--                   pt.size = 0.1, -->
+<!--                   cols = c("lightsteelblue2", "black"), -->
+<!--                   reduction = "umap", -->
+<!--                   order = TRUE) + -->
+<!--             NoLegend() + -->
+<!--             NoAxes() + -->
+<!--             coord_fixed() -->
+<!-- p2 <- FeaturePlot(object = integrated, -->
+<!--                   features = gene, -->
+<!--                   max.cutoff = 8000, -->
+<!--                   pt.size = 0.1, -->
+<!--                   cols = c("lightsteelblue2", "black"), -->
+<!--                   reduction = "tsne", -->
+<!--                   order = TRUE) + -->
+<!--             NoAxes() + -->
+<!--             coord_fixed() -->
+<!-- my_legend <- get_legend(p2) -->
+<!-- p2 <- p2 + NoLegend() -->
+<!-- print(plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22)) -->
+<!-- ``` -->
+
+
+
+
+<!-- # Check doublet -->
+
+<!-- ```{r} -->
+<!-- colnames(integrated@meta.data) -->
+<!-- ``` -->
+
+
+<!-- ### Read in doublet metadata -->
+
+<!-- ```{r} -->
+<!-- doublets <- read_csv(file = "../analyses/doublets/brain_alevin_allcells_by_method.csv") -->
+<!-- doublets -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- doublets <- integrated@meta.data %>% -->
+<!--     rownames_to_column("cell_id") %>% -->
+<!--     select(cell_id) %>% -->
+<!--     left_join(doublets) -->
+<!-- doublets -->
+<!-- ``` -->
+
+<!-- ### Add Metadata -->
+
+<!-- ```{r} -->
+<!-- integrated <- AddMetaData(object = integrated, metadata = doublets$DoubletFinder, col.name = "DoubletFinder") -->
+<!-- integrated <- AddMetaData(object = integrated, metadata = doublets$Scrublet, col.name = "Scrublet") -->
+<!-- integrated <- AddMetaData(object = integrated, metadata = doublets$Solo, col.name = "Solo") -->
+<!-- ``` -->
+
+<!-- ### Plot -->
+
+<!-- ```{r fig.width = 20, fig.height = 10} -->
+<!-- for (gene in c("DoubletFinder", "Scrublet", "Solo")) { -->
+<!--     p1 <- DimPlot(object = integrated, group.by = gene, pt.size = 0.1, cols = c("black", "lightsteelblue2"), reduction = "umap", order = TRUE) + NoLegend() + NoAxes() + coord_fixed() -->
+<!--     p2 <- DimPlot(object = integrated, group.by = gene, pt.size = 0.1, cols = c("black", "lightsteelblue2"), reduction = "tsne", order = TRUE) + NoAxes() + coord_fixed() -->
+<!--     my_legend <- get_legend(p2) -->
+<!--     p2 <- p2 + NoLegend() -->
+<!--     print(plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 1), labels = c("UMAP", "tSNE"), label_size = 22)) -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+# Save data
+
+
+```{r}
+meta_list_new <- list()
+gc()
+meta_list_new[["full"]] <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+meta_list_new[["diet"]] <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+```
+
+
+```{r}
+meta_list_new
+```
+
+
+```{r}
+modulescores <- colnames(integrated@meta.data) %>% str_subset("modulescore")
+annotations_metadata <- FetchData(object = integrated, 
+                                  vars = c(all_of(modulescores),
+                                           "annotation_broad_cell_type",
+                                           "annotation_broad_cell_type_ext",
+                                           "annotation_broad_cell_type_ext_fix")
+                                  )
+annotations_metadata
+```
+
+```{r}
+colnames(annotations_metadata)
+```
+
+
+```{r}
+for (ann_metadata in colnames(annotations_metadata)) {
+	message(paste0("Adding ", ann_metadata, " metadata:"))
+	for (ii in seq_along(meta_list_new)) {
+		message(paste0("\tadding metadata to ", names(meta_list_new)[[ii]], " ..."))
+		meta_list_new[[ii]] <- AddMetaData(object = meta_list_new[[ii]], metadata = annotations_metadata[[ann_metadata]], col.name = ann_metadata)
+	}
+}
+```
+
+
+
+```{r fig.width = 20, fig.height = 10}
+p1 <- DimPlot(object = meta_list_new[["full"]], group.by = "annotation_broad_cell_type_ext_fix", pt.size = 0.01, raster = FALSE, reduction = "tsne", label = TRUE, label.box = TRUE, repel = TRUE) + NoLegend() + NoAxes() + coord_fixed()
+p2 <- DimPlot(object = meta_list_new[["diet"]], group.by = "annotation_broad_cell_type_ext_fix", pt.size = 0.01, raster = FALSE, reduction = "tsne", label = TRUE, label.box = TRUE, repel = TRUE) + NoLegend() + NoAxes() + coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot_grid(p1, p2, ncol = 2, rel_widths = c(3, 3), labels = c("full", "diet"), label_size = 22)
+```
+
+
+
+
+```{r}
+write_rds(x = meta_list_new[["full"]], file = "../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+write_rds(x = meta_list_new[["diet"]], file = "../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+```
+
+
+
+
+```{r}
+str_subset(string = colnames(meta_list_new[["diet"]]@meta.data), pattern = "annotation_broad")
+```
+
+
+## Subcluster
+
+
+```{r}
+subcluster <- TRUE
+subcluster_by <- "annotation_broad_cell_type_ext_fix"
+```
+
+
+```{r}
+if (subcluster) {
+    integrated@meta.data[[subcluster_by]] <- integrated@meta.data[[subcluster_by]] %>% as.character() %>% replace_na("unknown")
+    split_integrated <- SplitObject(object = integrated, split.by = subcluster_by)
+    for (i in seq_along(split_integrated)) {
+    	message(paste0(names(split_integrated)[[i]], ":"))
+        split_integrated[[i]] <- DietSeurat(object = split_integrated[[i]], assays = "RNA")
+        metadata_remove <- c(str_subset(string = colnames(split_integrated[[i]]@meta.data), pattern = "RNA_snn_res"), 
+                             str_subset(string = colnames(split_integrated[[i]]@meta.data), pattern = "modulescore"),
+                             str_subset(string = colnames(split_integrated[[i]]@meta.data), pattern = "annotation_broad"),
+                             str_subset(string = colnames(split_integrated[[i]]@meta.data), pattern = "_Raw")
+                             )
+        for (ii in seq_along(metadata_remove)) {
+        	split_integrated[[i]]@meta.data[[metadata_remove[[ii]]]] <- NULL
+        }
+        message(paste0("\t ... splitting"))
+        subcluster_list <- SplitObject(object = split_integrated[[i]], split.by = "orig.ident")
+        message(paste0("\t ... saving"))
+        write_rds(x = subcluster_list, 
+            file = paste0(objects_path, 
+                         dataset, "_", 
+                         input_type, "_", 
+                         "seurat_list", 
+                         path_modifier, "_", 
+                         names(split_integrated)[[i]], "_", 
+                         "subclustering.rds")
+            )
+    }
+}
+```
+
+```{r}
+list.files("../analyses/rds_files/", pattern = "subclustering.rds")
+```
+
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```
+
+
+
+
+
+
+

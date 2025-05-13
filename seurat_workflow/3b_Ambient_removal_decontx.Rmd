@@ -1,0 +1,875 @@
+---
+title: "Ambient RNA removal with DecontX"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+
+
+
+## Libraries
+
+
+
+
+
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(Matrix)
+library(celda)
+library(SingleCellExperiment)
+library(scater)
+library(cowplot)
+library(colorspace)
+library(scales)
+library(eulerr)
+library(ComplexHeatmap)
+library(ggcorrplot)
+library(ggpubr)
+library(corrr)
+library(future)
+```
+
+## other bits
+
+```{r run-time-tibble}
+process_time <- tibble()
+stop_the_clock <- function(chunk_name = "unnamed") {
+    temp <- tibble::tibble(Code_chunk = chunk_name,
+                           Start_time = start_time,
+                           Stop_time = Sys.time(),
+                           Run_time = difftime(Stop_time, Start_time, units = "mins")
+                           )
+    process_time <- dplyr::bind_rows(process_time, temp)
+    return(process_time)
+}
+```
+
+
+```{r make-dir}
+dir.create(decontx_output_path, recursive = TRUE, showWarnings = FALSE)
+```
+
+
+
+
+## Data
+
+```{r load-data}
+start_time <- Sys.time()
+if (remove_doublets == FALSE & remove_ambient == TRUE) {
+    seurat_list_pre_ambient <- read_rds(file = paste0(objects_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "trimmed_preprocessed_seurat_list.rds")
+            )
+}
+if (remove_doublets == TRUE & remove_ambient == TRUE) {
+    seurat_list_pre_ambient <- read_rds(file = paste0(objects_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "doublets_removed_trimmed_preprocessed_seurat_list.rds")
+            )
+}
+seurat_list_pre_ambient
+process_time <- stop_the_clock("load_data")
+```
+
+
+## Cell types and Markers
+
+```{r load-markers}
+start_time <- Sys.time()
+marker_df <- read_tsv(gmt_file_path, col_names = FALSE) %>%
+    select(-X2) %>%
+    gather("index", "gene", -X1) %>%
+    select(-index) %>%
+    rename(celltype = X1) %>%
+    drop_na() %>%
+    group_by(celltype) %>%
+    filter(celltype %in% qc_plot_cell_type) %>%
+    slice(1) %>%
+    arrange(celltype)
+marker_df
+process_time <- stop_the_clock("load_markers")
+```
+
+
+Load marker gene set to use for `decontX`
+
+```{r}
+mutually_exclusive_markers_df <- read_tsv(gmt_file_path, col_names = FALSE) %>%
+    select(-X2) %>%
+    gather("index", "gene", -X1) %>%
+    select(-index) %>%
+    rename(celltype = X1) %>%
+    drop_na() %>%
+    group_by(celltype) %>%
+    filter(celltype %in% mutually_exclusive_markers_celltypes) %>%
+    arrange(celltype)
+mutually_exclusive_markers_df
+```
+
+```{r}
+mutually_exclusive_markers <- list()
+for (i in seq_along(mutually_exclusive_markers_celltypes)) {
+    mutually_exclusive_markers[[i]] <- mutually_exclusive_markers_df %>%
+        filter(celltype == mutually_exclusive_markers_celltypes[[i]]) %>%
+        pull(gene)
+}
+names(mutually_exclusive_markers) <- mutually_exclusive_markers_celltypes
+mutually_exclusive_markers
+```
+
+
+
+
+Then filter marker gene to make sure they are in the object.
+
+
+```{r genes-present}
+all_genes <- c()
+for (i in seq_along(seurat_list_pre_ambient)) {
+    all_genes <- c(all_genes, rownames(seurat_list_pre_ambient[[i]]))
+}
+all_genes <- unique(all_genes)
+genes_not_found <- marker_df$gene[!marker_df$gene %in% all_genes]
+if (length(genes_not_found) > 0) {
+    warning(paste0("The following genes were not found: ", genes_not_found))
+    marker_df <- marker_df %>% filter(gene != genes_not_found)
+} else {
+    message(paste0("All genes present in data."))
+}
+```
+
+
+# Run DecontX
+
+No we'll run `decontX`. `decontx` requires the data to be a `SingleCellExperiment` object, so we'll run `as.SingleCellExperiment` to convert the Seurat objects. Then we can plot the UMAPs of the replicates along with percent contamination.
+
+
+```{r run-decontx, fig.asp = 1}
+start_time <- Sys.time()
+my_umaps <- list()
+decont_list <- list()
+for (i in seq_along(seurat_list_pre_ambient)) {
+    my_idents <- seurat_list_pre_ambient[[i]]@meta.data %>%
+                    select(contains(paste0("res.", curr_res))) %>%
+                    deframe()
+    decont_list[[i]] <- as.SingleCellExperiment(seurat_list_pre_ambient[[i]])
+    #decont_list[[i]] <- decontX(x = decont_list[[i]],dbscanEps = 0.2)
+    decont_list[[i]] <- decontX(x = decont_list[[i]],
+                                z = my_idents)
+    my_umaps[[i]] <- reducedDim(decont_list[[i]], "decontX_UMAP")
+}
+process_time <- stop_the_clock("run_decontx")
+```
+
+## Plot cluster umaps
+
+```{r plot-contamination-umap, fig.width = 10, fig.height = 10}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_pre_ambient)) {
+
+    title <- ggdraw() +
+      draw_label(paste0(unique(decont_list[[i]]$orig.ident), " clusters"),
+                 fontface = "bold",
+                 x = 0,
+                 hjust = 0,
+                 size = 16)
+    p <- plotDimReduceCluster(x = decont_list[[i]]$decontX_clusters,
+                              dim1 = my_umaps[[i]][, 1],
+                              dim2 = my_umaps[[i]][, 2]
+                              )
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1)))
+    title <- ggdraw() +
+      draw_label(paste0(unique(decont_list[[i]]$orig.ident), " contamination"),
+                 fontface = "bold",
+                 x = 0,
+                 hjust = 0,
+                 size = 16)
+    p <- plotDecontXContamination(decont_list[[i]])
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1)))
+}
+process_time <- stop_the_clock("plot_contamination_umap")
+```
+
+
+## Plot marker umaps
+
+```{r plot-marker-umap, fig.width = 12, fig.height = 12}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_pre_ambient)) {
+    # marker expression
+    decont_list[[i]] <- logNormCounts(decont_list[[i]])
+    p <- plotDimReduceFeature(as.matrix(logcounts(decont_list[[i]])),
+                         dim1 = my_umaps[[i]][, 1],
+                         dim2 = my_umaps[[i]][, 2],
+                         colorLow = "lightsteelblue2",
+                         colorMid = "lightsteelblue2",
+                         colorHigh = "black",
+                         normalize = FALSE,
+                         trim = c(0, 2),
+                         zscore = FALSE,
+                         size = 0.1,
+                         ncol = 2,
+                         features = c("VAChT", "VGlut", "Gad1", "CG10433"),
+                         exactMatch = TRUE)
+    title <- ggdraw() + draw_label(unique(decont_list[[i]]$orig.ident), fontface = "bold", x = 0, hjust = 0, size = 16)
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1)))
+}
+process_time <- stop_the_clock("plot_marker_umap")
+```
+
+
+## Plot marker percentages
+
+
+```{r plot-marker-percentage, fig.width = 10, fig.height = 12}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_pre_ambient)) {
+    # filter out clusters with fewer than 100 cells
+    cluster_ids <- tibble(cluster_ids = decont_list[[i]]$decontX_clusters) %>%
+        group_by(cluster_ids) %>%
+        summarise(cluster_size = n()) %>%
+        filter(cluster_size > 100) %>%
+        arrange(cluster_ids) %>%
+        pull(cluster_ids)
+    cell_type_mappings <- list()
+    for (ii in cluster_ids) {
+        cell_type_mappings[str_c("Cluster", ii)] <- ii
+    }
+    # cluster specific marker expression
+    p1 <- plotDecontXMarkerPercentage(decont_list[[i]], ncol = 1,
+                                markers = mutually_exclusive_markers,
+                                groupClusters = cell_type_mappings,
+                                assayName = "counts") +
+        ggtitle("Original")
+    p2 <- plotDecontXMarkerPercentage(decont_list[[i]], ncol = 1,
+                                markers = mutually_exclusive_markers,
+                                groupClusters = cell_type_mappings,
+                                assayName = "decontXcounts") +
+        ggtitle("DecontX")
+
+    title <- ggdraw() + draw_label(unique(decont_list[[i]]$orig.ident), fontface = "bold", x = 0, hjust = 0, size = 16)
+    p <- plot_grid(p1, p2, ncol = 2, rel_heights = c(1, 1))
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1)))
+}
+process_time <- stop_the_clock("plot_marker_percentage")
+```
+
+
+
+
+## Ambient RNA Estimates
+
+```{r plot-contamination}
+start_time <- Sys.time()
+ambient_table <- tibble()
+for (i in seq_along(decont_list)) {
+    temp <- tibble(sample = decont_list[[i]]$orig.ident,
+                   contamination = decont_list[[i]]@metadata[["decontX"]][["contamination"]])
+    ambient_table <- bind_rows(ambient_table, temp)
+}
+ambient_table %>%
+  ggplot(aes(x = sample, y = contamination)) +
+    geom_boxplot()
+process_time <- stop_the_clock("plot_contamination")
+```
+
+
+
+# Re-Run Seurat Analysis
+
+Re-running the `Seurat` pipeline with the adjusted counts matrix.
+
+
+
+```{r get-adj-counts}
+start_time <- Sys.time()
+decontx_adj_decont <- list()
+for (i in seq_along(decont_list)) {
+    decontx_adj_decont[[i]] <- decontXcounts(decont_list[[i]])
+}
+if (round_the_data) {
+    round_to_int <- function(input) {
+        input@x <- floor(input@x) + rbinom(length(input@x), 1, input@x - floor(input@x))
+        return(input)
+    }
+    for (i in seq_along(decontx_adj_decont)) {
+        decontx_adj_decont[[i]] <- round_to_int(decontx_adj_decont[[i]])
+    }
+}
+names(decontx_adj_decont) <- names(seurat_list_pre_ambient)
+#decontx_adj_decont
+process_time <- stop_the_clock("get_adj_counts")
+```
+
+
+
+```{r create-seurat-adj}
+start_time <- Sys.time()
+seurat_list_adj_counts <- list()
+for (i in seq_along(decont_list)) {
+    seurat_list_adj_counts[[i]] <- CreateSeuratObject(counts = decontx_adj_decont[[i]],
+                                                      min.features = 3,
+                                                      project = "sexed_list[[i]]")
+}
+names(seurat_list_adj_counts) <- names(seurat_list_pre_ambient)
+seurat_list_adj_counts
+process_time <- stop_the_clock("create_seurat_adj")
+```
+
+
+
+```{r sct-on-adj-counts, warning = FALSE, message = FALSE}
+start_time <- Sys.time()
+if (parallelize) {
+    plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+if (normalization == "SCT") {
+    for (i in seq_along(seurat_list_adj_counts)) {
+        seurat_list_adj_counts[[i]] <- SCTransform(seurat_list_adj_counts[[i]],
+                                                   return.only.var.genes = FALSE,
+                                                   verbose = FALSE)
+    }
+}
+if (parallelize) {
+    plan("sequential")
+}
+process_time <- stop_the_clock("sct_on_adj_counts")
+```
+
+
+```{r lognorm-on-adj-counts, warning = FALSE, message = FALSE}
+start_time <- Sys.time()
+if (parallelize) {
+    plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+if (normalization == "LogNormalize") {
+    for (i in seq_along(seurat_list_adj_counts)) {
+        seurat_list_adj_counts[[i]] <- NormalizeData(seurat_list_adj_counts[[i]])
+        seurat_list_adj_counts[[i]] <- FindVariableFeatures(object = seurat_list_adj_counts[[i]],
+                                                              selection.method = var_gene_method,
+                                                              nfeatures = n_var_features,
+                                                              mean.cutoff = c(min_mean_cutoff, max_mean_cutoff),
+                                                              dispersion.cutoff = c(min_dispersion_cutoff, max_dispersion_cutoff)
+                                                          )
+        seurat_list_adj_counts[[i]]@assays[["RNA"]]@var.features <- seurat_list_adj_counts[[i]]@assays[["RNA"]]@var.features[1:n_var_features]
+        seurat_list_adj_counts[[i]] <- ScaleData(seurat_list_adj_counts[[i]],
+                                                use.umi = use_umi,
+                                                model.use = test_use)
+    }
+}
+if (parallelize) {
+    plan("sequential")
+}
+process_time <- stop_the_clock("lognorm_on_adj_counts")
+```
+
+
+
+```{r pca-etc-on-adj-counts}
+start_time <- Sys.time()
+if (parallelize) {
+    plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+for (i in seq_along(seurat_list_adj_counts)) {
+    seurat_list_adj_counts[[i]] <- RunPCA(seurat_list_adj_counts[[i]],
+                                          npcs = curr_pc,
+                                          verbose = TRUE)
+    seurat_list_adj_counts[[i]] <- FindNeighbors(seurat_list_adj_counts[[i]],
+                                                 reduction = "pca",
+                                                 dims = 1:curr_pc,
+                                                 k.param = neighbours,
+                                                 force.recalc = TRUE)
+    seurat_list_adj_counts[[i]] <- FindClusters(seurat_list_adj_counts[[i]], resolution = curr_res)
+    seurat_list_adj_counts[[i]] <- RunUMAP(object = seurat_list_adj_counts[[i]], dims = 1:curr_pc)
+}
+seurat_list_adj_counts
+if (parallelize) {
+    plan("sequential")
+}
+process_time <- stop_the_clock("pca_etc_on_adj_counts")
+```
+
+
+
+# Compare the Adjusted Counts
+
+
+## Replicate correlation
+
+
+```{r plot-correlation, fig.height = 10,fig.width = 10, warning = FALSE, message = FALSE}
+start_time <- Sys.time()
+p <- list()
+for (i in seq_along(seurat_list_adj_counts)) {
+    orginal_counts <- seurat_list_pre_ambient[[i]]@assays[["RNA"]]@counts
+    adjusted_counts <- seurat_list_adj_counts[[i]]@assays[["RNA"]]@counts
+    common_genes <- intersect(rownames(orginal_counts), rownames(adjusted_counts))
+    temp_tibble <- tibble(original = rowSums(orginal_counts[common_genes, ]),
+                          adjusted = rowSums(adjusted_counts[common_genes, ])
+                          )
+    p[[i]] <- temp_tibble %>%
+          ggplot(aes(x = log1p(original),
+                     y = log1p(adjusted)
+                     )
+                 ) +
+            geom_point() +
+            coord_fixed() +
+            geom_smooth(method = lm) +
+            stat_cor(label.y = 15, size  = 3) +
+            stat_regline_equation(label.y = 14, size  = 3) +
+            ylim(0, 16) +
+            xlim(0, 16) +
+            theme_gray() +
+            theme(text = element_text(size = 14)) +
+        ggtitle(names(seurat_list_adj_counts)[[i]])
+
+}
+plot_grid(plotlist = p, ncol = 2)
+process_time <- stop_the_clock("plot_correlation")
+```
+
+
+
+## Compare the UMAP Embeddings
+
+Clustering post removal of the soup drastically improves clustering of each sample. Here "improves" means increased separation of the clusters and a general lack of the clump in the middle of the plot. Whether this represents something real and reflective of the biology has yet to be determined.
+
+
+```{r plot-adj-umap, fig.height = 6, fig.width = 12}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_adj_counts)) {
+    pt_size <- 4 * AutoPointSize(data = seurat_list_pre_ambient[[i]], raster = FALSE)
+    p1 <- DimPlot(object = seurat_list_pre_ambient[[i]],
+                  pt.size = min(4, pt_size),
+                  label = TRUE)  +
+        NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    p2 <- DimPlot(object = seurat_list_adj_counts[[i]],
+                  pt.size = min(4, pt_size),
+                  label = TRUE) +
+        NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    p <- plot_grid(p1, p2, labels = c("Doublets removed", "Ambient and doublets removed"), label_size = 10)
+    title <- ggdraw() + draw_label(unique(seurat_list_pre_ambient[[i]]@meta.data[["orig.ident"]]),
+                                   fontface = "bold",
+                                   x = 0,
+                                   hjust = 0,
+                                   size = 16)
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1)))
+}
+process_time <- stop_the_clock("plot_adj_umap")
+```
+
+
+
+
+## Compare cell type markers
+
+DecontX does seem to remove most of the presumed ambient RNA from the markers.
+
+
+```{r plot-adj-marker-umap, fig.width = 8,fig.height = 24}
+start_time <- Sys.time()
+p_org <- list()
+p_adj <- list()
+for (i in seq_along(seurat_list_pre_ambient)) {
+    pt_size <- 4 * AutoPointSize(data = seurat_list_pre_ambient[[i]], raster = FALSE)
+    for (ii in seq_along(marker_df$gene)) {
+        p_org[[ii]] <-  FeaturePlot(object = seurat_list_pre_ambient[[i]],
+                                   features = marker_df$gene[[ii]],
+                                   pt.size = min(4, pt_size),
+                                   cols = c("lightsteelblue2", "black"),
+                                   order = TRUE) +
+            NoAxes() +
+            coord_fixed() +
+            ggtitle(paste0(marker_df$celltype[[ii]], "\n(", marker_df$gene[[ii]], ")")) +
+            theme(plot.title = element_text(size = 10),
+                  legend.text = element_text(size = 8),
+                  legend.key.width = unit(.2, "cm")
+                  )
+        p_adj[[ii]] <-  FeaturePlot(object = seurat_list_adj_counts[[i]],
+                                   features = marker_df$gene[[ii]],
+                                   pt.size = min(4, pt_size),
+                                   cols = c("lightsteelblue2", "black"),
+                                   order = TRUE) +
+            NoAxes() +
+            coord_fixed() +
+            ggtitle(paste0(marker_df$celltype[[ii]], "\n(", marker_df$gene[[ii]], ")")) +
+            theme(plot.title = element_text(size = 10),
+                  legend.text = element_text(size = 8),
+                  legend.key.width = unit(.2, "cm")
+                  )
+    }
+    p1 <- plot_grid(plotlist = p_org, ncol = 1)
+    p2 <- plot_grid(plotlist = p_adj, ncol = 1)
+    p <- plot_grid(p1, p2, ncol = 2, labels = c("Original", "Ambient Removed"), hjust = 0, vjust = 0, label_size = 14)
+    title <- ggdraw() +
+        draw_label(unique(seurat_list_pre_ambient[[i]]@meta.data[["orig.ident"]]),
+                   fontface = "bold",
+                   x = 0,
+                   hjust = 0,
+                   vjust = -0.1,
+                   size = 20)
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 2)))
+}
+process_time <- stop_the_clock("plot_adj_marker_umap")
+```
+
+
+
+## Euler plots of markers
+
+### Counts function
+
+```{r euler-count-function}
+start_time <- Sys.time()
+euler_counts <- function(object, markers_list) {
+    cell_lists <- list()
+    for (i in seq_along(markers_list)) {
+        if (length(mutually_exclusive_markers[[i]]) > 1) {
+            cell_lists[[i]] <- object@assays[["RNA"]]@counts[markers_list[[i]], ] %>%
+                                        t() %>%
+                                        as.data.frame() %>%
+                                        mutate(my_row_sum = rowSums(.)) %>%
+                                        rownames_to_column("cell_id") %>%
+                                        filter(my_row_sum >= coexpression_thresh) %>% #cellTypeMappings
+                                        pull(cell_id)
+        } else {
+            cell_lists[[i]] <- object@assays[["RNA"]]@counts[markers_list[[i]], ] %>%
+                                        as.data.frame() %>%
+                                        rownames_to_column("cell_id") %>%
+                                        filter(`.` >= coexpression_thresh) %>%
+                                        pull(cell_id)
+        }
+    }
+    names(cell_lists) <- names(markers_list)
+    my_counts <- c("1" = length(setdiff(setdiff(cell_lists[[1]], cell_lists[[2]]), cell_lists[[3]])),
+                   "2" = length(setdiff(setdiff(cell_lists[[2]], cell_lists[[1]]), cell_lists[[3]])),
+                   "3" = length(setdiff(setdiff(cell_lists[[3]], cell_lists[[1]]), cell_lists[[2]])),
+                   "1&2" = length(setdiff(intersect(cell_lists[[1]], cell_lists[[2]]), cell_lists[[3]])),
+                   "1&3" = length(setdiff(intersect(cell_lists[[1]], cell_lists[[3]]), cell_lists[[2]])),
+                   "2&3" = length(setdiff(intersect(cell_lists[[2]], cell_lists[[3]]), cell_lists[[1]])),
+                   "1&2&3" = length(intersect(cell_lists[[1]], intersect(cell_lists[[2]], cell_lists[[3]]))))
+    names(my_counts) <- c(names(cell_lists)[[1]],
+                          names(cell_lists)[[2]],
+                          names(cell_lists)[[3]],
+                          paste0(names(cell_lists)[[1]], "&", names(cell_lists)[[2]]),
+                          paste0(names(cell_lists)[[1]], "&", names(cell_lists)[[3]]),
+                          paste0(names(cell_lists)[[2]], "&", names(cell_lists)[[3]]),
+                          paste0(names(cell_lists)[[1]], "&", names(cell_lists)[[2]], "&", names(cell_lists)[[3]])
+                          )
+    return(my_counts)
+}
+process_time <- stop_the_clock("euler_count_function")
+```
+
+
+
+```{r plot-euler-diagrams, warning = F,message = F,fig.width = 8,fig.height = 6}
+start_time <- Sys.time()
+for (ii in seq_along(seurat_list_adj_counts)) {
+
+    my_counts <- euler_counts(seurat_list_pre_ambient[[ii]], mutually_exclusive_markers)
+    fit <- euler(my_counts)
+    p1 <- plot(fit,
+               quantities = TRUE,
+               fills = list(fill = colorspace::qualitative_hcl(n = 3, palette = "Set 2"), alpha = 0.8)
+    )
+
+    my_counts <- euler_counts(seurat_list_adj_counts[[ii]], mutually_exclusive_markers)
+    fit <- euler(my_counts)
+    p2 <- plot(fit,
+               quantities = TRUE,
+               fills = list(fill = colorspace::qualitative_hcl(n = 3, palette = "Set 2"), alpha = 0.8)
+    )
+
+    p <- plot_grid(p1, p2, labels = c("Original", "Ambient removed"), hjust = 0, vjust = 0, label_size = 14)
+    title <- ggdraw() + draw_label(unique(seurat_list_pre_ambient[[ii]]@meta.data[["orig.ident"]]),
+                                   fontface = "bold",
+                                   x = 0,
+                                   hjust = 0,
+                                   vjust = -0.1,
+                                   size = 20)
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1)))
+}
+process_time <- stop_the_clock("plot_euler_diagrams")
+```
+
+
+
+## Upset plots
+
+```{r upset-plot-function}
+start_time <- Sys.time()
+my_upset_plot <- function(object, markers_list) {
+    cell_lists <- list()
+    for (i in seq_along(markers_list)) {
+        if (length(markers_list[[i]]) > 1) {
+            cell_lists[[i]] <- object@assays[["RNA"]]@counts[markers_list[[i]], ] %>%
+                                        t() %>%
+                                        as.data.frame() %>%
+                                        mutate(my_group = if_else(rowSums(.) >= coexpression_thresh, 1, 0)) %>%
+                                        select(my_group)
+        } else {
+            cell_lists[[i]] <- object@assays[["RNA"]]@counts[markers_list[[i]], ] %>%
+                                        as.data.frame() %>%
+                                        mutate(my_group = if_else(`.` >= coexpression_thresh, 1, 0)) %>%
+                                        select(my_group)
+        }
+        names(cell_lists[[i]]) <- c(names(markers_list)[[i]])
+    }
+    all_cell_lists <- bind_cols(cell_lists)
+    all_cell_lists <- all_cell_lists[-rowSums(all_cell_lists[, 1:4]) != 0, ]
+    m <- make_comb_mat(all_cell_lists, mode = "distinct")
+
+    ss <- set_size(m)
+    cs <- comb_size(m)
+    ht <- UpSet(m,
+        set_order = order(ss),
+        comb_order = order(comb_degree(m), -cs),
+        top_annotation = HeatmapAnnotation(
+            "Intersection size" = anno_barplot(cs,
+                ylim = c(0, max(cs) * 1.1),
+                border = FALSE,
+                gp = gpar(fill = "black"),
+                height = unit(12, "cm")
+            ),
+            annotation_name_side = "left",
+            annotation_name_rot = 90),
+        left_annotation = rowAnnotation(
+            "Cells per group" = anno_barplot(-ss,
+                baseline = 0,
+                axis_param = list(
+                    #at = c(0, -500, -1000, -1500),
+                    #labels = c(0, 500, 1000, 1500),
+                    labels_rot = 0),
+                border = FALSE,
+                gp = gpar(fill = "black"),
+                width = unit(6, "cm")
+            ),
+            set_name = anno_text(set_name(m),
+                location = 0.5,
+                just = "center",
+                width = max_text_width(set_name(m)) + unit(4, "mm"))
+        ),
+        right_annotation = NULL,
+        show_row_names = FALSE)
+    ht <- draw(ht) #+ ggtitle(unique(object@meta.data[["orig.ident"]])
+    od <- column_order(ht)
+    decorate_annotation("Intersection size", {
+        grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(4, "pt"),
+            default.units = "native", just = c("left", "bottom"),
+            gp = gpar(fontsize = 10, col = "#404040"), rot = 45)
+    })
+}
+process_time <- stop_the_clock("upset_plot_function")
+```
+
+### Original data
+
+```{r upset-plot-original, fig.width = 10, fig.height = 6}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_pre_ambient)) {
+    cat(paste0("\n", names(seurat_list_pre_ambient)[[i]]))
+    my_upset_plot(seurat_list_pre_ambient[[i]], mutually_exclusive_markers)
+}
+process_time <- stop_the_clock("upset_plot_original")
+```
+
+
+### Adjusted data
+
+```{r upset-plot-adjusted, fig.width = 10, fig.height = 6}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_adj_counts)) {
+    cat(paste0("\n", names(seurat_list_adj_counts)[[i]]))
+    my_upset_plot(seurat_list_adj_counts[[i]], mutually_exclusive_markers)
+}
+process_time <- stop_the_clock("upset_plot_adjusted")
+```
+
+
+
+
+
+
+# Save adjusted data
+
+```{r save-data}
+start_time <- Sys.time()
+write_rds(x = decont_list,
+           file = paste0(decontx_output_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "decontx_soup_list.rds")
+            )
+write_rds(x = decontx_adj_decont,
+           file = paste0(decontx_output_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "decontx_adj_counts.rds")
+            )
+write_rds(x = seurat_list_adj_counts,
+           file = paste0(decontx_output_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "decontx_seurat_list_adj.rds")
+            )
+process_time <- stop_the_clock("save_data")
+```
+
+
+
+
+
+# Run time
+
+```{r run-times}
+process_time
+```
+
+```{r plot-run-times, fig.width = 10, fig.height = 8}
+process_time$Code_chunk <- factor(process_time$Code_chunk, levels = rev(process_time$Code_chunk))
+process_time %>%
+    ggplot(aes(x = Code_chunk, y = Run_time, fill = Run_time)) +
+    geom_col(width = 0.8) +
+    xlab("Code Chunk") +
+    ylab("Run Time (mins)") +
+    coord_flip()
+```
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (job_id != "local") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

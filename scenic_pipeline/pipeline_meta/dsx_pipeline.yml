@@ -1,0 +1,49 @@
+# YAML file for pipeline_meta.py
+
+cluster:
+    queue: long
+
+pyscenic_conda_env: pyscenic_py
+pyscenic_r_conda_env: pyscenic_r
+
+filtering:
+    threads: 2
+    memory: 20G
+    UMI_counts: 3
+    min_percent: 0.01
+
+pyscenic:
+    threads: 1
+    memory: 14G
+    number_runs: 100
+    job_limit: 100
+
+binarize:
+    custom_aucell_thresholds:    # ../../data.dir/custom_aucell_thresholds.csv - optional path to custom AUCell thresholds file
+    threads: 5
+    memory: 10G
+
+rss_zscore:
+    annotation_input: cell_type-annotation.csv
+    threads: 3
+    memory: 10G
+
+aucell_heatmap:
+    threads: 3
+    memory: 12G
+
+high_conf_reg:
+    number_genes: 5
+    percent_occurance: 50
+    threads: 2
+    memory: 4G
+
+calculate_aucell:
+    seed: 12021
+    threads: 5
+    memory: 80G
+    threshold: 0.05
+
+pyscenic_r:
+    threads: 1
+    memory: 2G

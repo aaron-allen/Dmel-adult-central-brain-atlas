@@ -1,0 +1,759 @@
+---
+title: "Doublet method comparison"
+description: Comparing the outputs of DoubletFinder, Scrublet, and Solo
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+```{r warning = FALSE, message = FALSE}
+library(tidyverse)
+library(Seurat)
+library(data.table)
+library(Matrix)
+library(eulerr)
+library(ComplexHeatmap)
+library(colorspace)
+library(cowplot)
+```
+
+
+
+# Params
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+
+
+
+# Intro
+
+
+
+To remove doublets from the Sexed brain data set I've run 3 different methods/packages to identify doublets: [DoubletFinder](https://github.com/chris-mcginnis-ucsf/DoubletFinder), [Scrublet](https://github.com/swolock/scrublet), and [Solo](https://github.com/calico/solo). I have previously made other notebooks where I run though a bunch of different parameters for each method, and then another set of notebooks where I summarize and compare the effects within each method for varying their parameters. In this notebook I'm comparing between method after taking the *"best(?)"* results from each method.
+
+I had previously also tried [DoubletDetection](https://github.com/JonathanShor/DoubletDetection). It seemed to work well for the brain data, but in general was very sensitive to varying UMI depth. In the VNC we have a few cell types with very different UMI depth, so it was not behaving properly.
+
+I had also briefly tried [DoubletDecon](https://github.com/EDePasquale/DoubletDecon), but after running for 3 weeks on the cluster, it still hadn't finished. So I moved on.
+
+
+
+# Load the data
+
+
+### Load the Seurat object.
+
+I'm first loading the previously computed Seurat object.
+
+```{r}
+seurat_list_trim <- read_rds(file = paste0(objects_path,
+                                          dataset, "_",
+                                          input_type, "_",
+                                          "trimmed_preprocessed_seurat_list.rds")
+                         )
+```
+
+
+### Cell types and Markers
+
+```{r load-markers}
+marker_df <- read_tsv(gmt_file_path, col_names = FALSE) %>%
+    select(-X2) %>%
+    gather("index", "gene", -X1) %>%
+    select(-index) %>%
+    rename(celltype = X1) %>%
+    drop_na() %>%
+    group_by(celltype) %>%
+    filter(celltype %in% qc_plot_cell_type) %>%
+    slice(1) %>%
+    arrange(celltype)
+marker_df
+```
+
+
+Then filter
+marker gene to make sure they are in the object.
+
+
+```{r genes-present}
+all_genes <- c()
+for (i in seq_along(seurat_list_trim)) {
+    all_genes <- c(all_genes, rownames(seurat_list_trim[[i]]))
+}
+all_genes <- unique(all_genes)
+genes_not_found <- marker_df$gene[!marker_df$gene %in% all_genes]
+if (length(genes_not_found) > 0) {
+    warning(paste0("The following genes were not found: ", genes_not_found))
+    marker_df <- marker_df %>% filter(gene != genes_not_found)
+} else {
+    message(paste0("All genes present in data."))
+}
+```
+
+
+
+
+
+### Load DoubletFinder data.
+
+
+Doublets are called as *"high"* vs. *"low"* classification to estimate the  *"heterotypic/neotypic"* vs *"homotypic/embedded"* doublets. I collapse the *"high"* vs. *"low"* doublet classification. I'm not terribly worried about a little "over-classification" as I'll be intersecting with other methods anyway.
+
+```{r warning = F, message = F}
+df_doublets <- read_csv(paste0(doublet_path,
+                                 "doubletfinder/",
+                                 dataset, "_",
+                                 input_type, "_",
+                                 "doubletfinder_calls.csv"),
+                  col_names = TRUE
+                  ) %>%
+    mutate(DoubletFinder = if_else(DoubletFinder == "Singlet", "Singlet", "Doublet"))
+head(df_doublets)
+```
+
+
+
+### Load Scrublet PC test.
+
+The Scrublet code still allows for someone to specify a range of PCs to test. So for the sake of this script, the end user has to pick one that they want to use. I assume it is the same as the default PC, `curr_pc`, used in the rest of the pipeline.
+
+
+```{r}
+input_files <- Sys.glob(paste0(doublet_path, "scrublet/*_predicted_doublets.csv"))
+scrub_doublets <- list()
+for (i in seq_along(input_files)) {
+    curr_sample_name <- input_files[[i]] %>% str_remove(paste0(doublet_path, "scrublet/")) %>% str_remove("_predicted_doublets.csv")
+    scrub_doublets[[i]] <- read_csv(input_files[[i]]) %>%
+        select("0", as.character(curr_pc)) %>%
+        rename(c(cell_id = `0`, Scrublet = as.character(curr_pc))) %>%
+        mutate(cell_id = str_c(curr_sample_name, cell_id, sep = "_") %>% str_remove("-1"),
+               Scrublet = if_else(Scrublet == 1, "Doublet", "Singlet")) %>%
+        select(cell_id, Scrublet)
+}
+scrub_doublets <- bind_rows(scrub_doublets)
+head(scrub_doublets)
+```
+
+
+
+
+
+### Load Solo doublets
+
+
+<!--  very old bit
+Here we read in the `pred.npy` which has the raw predictions output from `solo`. On their [GitHub issue #62](https://github.com/calico/solo/issues/62), they say that the `preds.npy` are raw and need to be recalibrated, which is what the `is_doublet.npy` file is. But in our case the `is_doublet.npy` reports many fewer doublets than we would expect, and the `preds.npy` numbers are in an acceptable range. For now we will load the `preds.npy` instead of the `is_doublet.npy` until we sort this out.
+ -->
+
+
+<!-- Old bit of code for loading in the output from the stand alone cli solo. But I've now switched over to using solo inside scvi-tools -->
+<!-- Here we read in the `is_doublet.npy` which has the raw predictions output from `solo`. -->
+<!-- ```{r} -->
+<!-- input_files <- Sys.glob(paste0(doublet_path,"solo/*/is_doublet.npy")) -->
+<!-- solo_doublets <- list() -->
+<!-- if (length(input_files) > 0) { -->
+<!--     for (i in seq_along(input_files)) { -->
+<!--         curr_sample_name <- input_files[[i]] %>% str_remove(paste0(doublet_path,"solo/")) %>% str_remove("/is_doublet.npy") -->
+<!--         cell_ids <- read_tsv(file = paste0(doublet_path,"filtered_inputs/",curr_sample_name,"/barcodes.tsv"),col_names = FALSE) -->
+<!--         doublets <- np$load(file = paste0(doublet_path,"solo/",curr_sample_name,"/is_doublet.npy")) -->
+<!--         # sometimes the solo doublets file is one longer than the data ... don't know why ... -->
+<!--         doublets <- doublets[1:length(cell_ids$X1)] -->
+<!--         solo_doublets[[i]] <- tibble(cell_id = str_c(curr_sample_name, cell_ids$X1, sep = "_") %>% str_remove("-1"), -->
+<!--                                      Solo = doublets) %>% -->
+<!--             mutate(Solo = if_else(Solo == TRUE,"Doublet","Singlet")) %>% -->
+<!--             select(cell_id, Solo) -->
+<!--     } -->
+<!--     solo_doublets <- bind_rows(solo_doublets) -->
+<!-- } else { -->
+<!--     solo_doublets <- data.frame(cell_id = NA, -->
+<!--                                 Solo = NA) -->
+<!-- } -->
+<!-- head(solo_doublets) -->
+<!-- ``` -->
+
+
+
+Read in the `*_solo_doublet_predictions.csv` file.
+
+```{r}
+# input_files <- Sys.glob(paste0(doublet_path,"solo/*_solo_doublet_scores.csv"))
+input_files <- Sys.glob(paste0(doublet_path, "solo/*_solo_doublet_predictions.csv"))
+input_files
+solo_doublets <- list()
+for (i in seq_along(input_files)) {
+    # curr_sample_name <- input_files[[i]] %>% str_remove(paste0(doublet_path,"solo/")) %>% str_remove("_solo_doublet_scores.csv")
+    curr_sample_name <- input_files[[i]] %>% str_remove(paste0(doublet_path, "solo/")) %>% str_remove("_solo_doublet_predictions.csv")
+    solo_doublets[[i]] <- read_csv(input_files[[i]]) %>%
+        rename(cell_id = X1) %>%
+        mutate(cell_id = str_c(curr_sample_name, cell_id, sep = "_") %>% str_remove("-1-0"),
+               # Solo = if_else(doublet > 0 & singlet < 0,"Doublet","Singlet")) %>%
+               Solo = if_else(prediction == "doublet", "Doublet", "Singlet")) %>%
+        select(cell_id, Solo)
+}
+solo_doublets <- bind_rows(solo_doublets)
+head(solo_doublets)
+```
+
+
+# Compare the methods
+
+
+### Join the data
+
+I `left_join` the data sets together.
+
+
+```{r}
+all_cells <- c()
+for (i in seq_along(seurat_list_trim)) {
+  all_cells <- c(all_cells, colnames(seurat_list_trim[[i]]))
+}
+```
+
+```{r}
+all_doublets <- tibble(cell_id = all_cells) %>%
+    left_join(df_doublets, by = "cell_id") %>%
+    left_join(scrub_doublets, by = "cell_id") %>%
+    left_join(solo_doublets, by = "cell_id") %>%
+    mutate(sample_rep = str_sub(cell_id, end = -18))
+all_doublets[is.na(all_doublets)] <- "Singlet"
+head(all_doublets)
+```
+
+
+
+
+
+### Count the doublets
+
+Of the n cells, each method identifies a different number of doublets. This is to be expected as `Scrublet` is only supposed to identify *"heterotypic/neotypic"* cells. Since I've included the homotypic adjustment (`nExp = nExp_poi.adj`, `reuse.pANN = "pANN_0.25_X.XX_XXXX"`) for `DoubletFinder`, it should return *"homotypic/embedded"* cells as well. And `Solo` is doing its own thing...
+
+
+```{r}
+all_doublets %>%
+    summarise(total_cells = length(cell_id),
+              DoubletFinder = length(cell_id[DoubletFinder == "Doublet"]),
+              Scrublet = length(cell_id[Scrublet == "Doublet"]),
+              Solo = length(cell_id[Solo == "Doublet"])
+              ) %>%
+    gather("Method", "Number of cells")
+```
+
+
+### Euler plot
+
+```{r}
+fit <- euler(c("DoubletFinder" = length(all_doublets$cell_id[all_doublets$DoubletFinder == "Doublet" &
+                                                          all_doublets$Scrublet == "Singlet" &
+                                                          all_doublets$Solo == "Singlet"]),
+               "Scrublet" = length(all_doublets$cell_id[all_doublets$DoubletFinder == "Singlet" &
+                                                           all_doublets$Scrublet == "Doublet" &
+                                                          all_doublets$Solo == "Singlet"]),
+               "Solo" = length(all_doublets$cell_id[all_doublets$DoubletFinder == "Singlet" &
+                                                           all_doublets$Scrublet == "Singlet" &
+                                                          all_doublets$Solo == "Doublet"]),
+
+               "DoubletFinder&Scrublet" = length(all_doublets$cell_id[all_doublets$DoubletFinder == "Doublet" &
+                                                            all_doublets$Scrublet == "Doublet" &
+                                                            all_doublets$Solo == "Singlet"]),
+               "Scrublet&Solo" = length(all_doublets$cell_id[all_doublets$DoubletFinder == "Singlet" &
+                                                            all_doublets$Scrublet == "Doublet" &
+                                                            all_doublets$Solo == "Doublet"]),
+               "DoubletFinder&Solo" = length(all_doublets$cell_id[all_doublets$DoubletFinder == "Doublet" &
+                                                            all_doublets$Scrublet == "Singlet" &
+                                                            all_doublets$Solo == "Doublet"]),
+
+               "DoubletFinder&Scrublet&Solo" = length(all_doublets$cell_id[all_doublets$DoubletFinder == "Doublet" &
+                                                            all_doublets$Scrublet == "Doublet" &
+                                                            all_doublets$Solo == "Doublet"])
+               ))
+
+plot(fit,
+     quantities = TRUE,
+     fills = list(fill = colorspace::qualitative_hcl(n = 3, palette = "Set 2"), alpha = 0.5)
+)
+```
+
+
+### Upset plots
+
+Upset plots, if anyone prefers...
+
+```{r fig.height = 3, fig.width = 5, eval = F}
+all_doublets_bolean <- all_doublets
+all_doublets_bolean[all_doublets_bolean == "Singlet"] <- "0"
+all_doublets_bolean[all_doublets_bolean == "Doublet"] <- "1"
+all_doublets_bolean[, 2:4] <- sapply(all_doublets_bolean[, 2:4], as.numeric)
+all_doublets_bolean <- all_doublets_bolean[-rowSums(all_doublets_bolean[, 2:4]) != 0, ]
+m1 <- make_comb_mat(all_doublets_bolean, mode = "distinct")
+m2 <- make_comb_mat(all_doublets_bolean, mode = "intersect")
+m3 <- make_comb_mat(all_doublets_bolean, mode = "union")
+UpSet(m1, column_title = "distinct mode")
+UpSet(m2, column_title = "intersect mode")
+UpSet(m3, column_title = "union mode")
+```
+
+
+### Union vs intersection
+
+Below are the numbers of identified doublets depending on whether you take the union (`any_1`), the strict intersection (`all_3`), or in-between (`any_2`).
+
+```{r}
+all_doublets %>%
+    summarise(any_1 = sum(rowSums(.[, 2:4] != "Singlet") > 0),
+              any_2 = sum(rowSums(.[, 2:4] != "Singlet") > 1),
+              all_3 = sum(rowSums(.[, 2:4] != "Singlet") > 2)
+              )
+```
+
+
+
+
+# Doublets in the UMAP
+
+
+### Add doublet metadata
+
+Adding meta data to the initial integrated and clustered object.
+
+```{r}
+for (i in seq_along(seurat_list_trim)) {
+  seurat_list_trim[[i]] <- AddMetaData(seurat_list_trim[[i]],
+                            metadata = all_doublets$DoubletFinder[all_doublets$sample_rep == unique(seurat_list_trim[[i]]$orig.ident)],
+                            col.name = "DoubletFinder")
+  seurat_list_trim[[i]] <- AddMetaData(seurat_list_trim[[i]],
+                            metadata = all_doublets$Scrublet[all_doublets$sample_rep == unique(seurat_list_trim[[i]]$orig.ident)],
+                            col.name = "Scrublet")
+  seurat_list_trim[[i]] <- AddMetaData(seurat_list_trim[[i]],
+                            metadata = all_doublets$Solo[all_doublets$sample_rep == unique(seurat_list_trim[[i]]$orig.ident)],
+                            col.name = "Solo")
+}
+```
+
+
+
+### Plot markers on UMAP
+
+To get the lay of the land, we'll first plot out some markers.
+
+```{r fig.width = 10, fig.height = 14}
+p_list <- list()
+for (ii in seq_along(seurat_list_trim)) {
+    pt_size <- 4 * AutoPointSize(data = seurat_list_trim[[ii]], raster = FALSE)
+    for (i in seq_along(marker_df$gene)) {
+        p_list[[i]] <- FeaturePlot(object = seurat_list_trim[[ii]],
+                              features = marker_df$gene[[i]],
+                              pt.size = min(4, pt_size),
+                              cols = c("lightsteelblue2", "black"),
+                              order = TRUE) +
+                      NoAxes() +
+                      coord_fixed() +
+                      ggtitle(paste0(marker_df$celltype[[i]], "\n(", marker_df$gene[[i]], ")")) +
+                      theme(plot.title = element_text(size = 10),
+                            legend.text = element_text(size = 8),
+                            legend.key.width = unit(.2, "cm")
+                            )
+    }
+    p <- plot_grid(plotlist = p_list, ncol = 2, align = "hv", axis = "tbl")
+    title <- ggdraw() +
+            draw_label(paste0("Sample = ", unique(seurat_list_trim[[ii]]$orig.ident)),
+              fontface = "bold",
+              x = 0,
+              hjust = 0,
+              vjust = -0.1,
+              size = 12)
+    plot(plot_grid(title, p, ncol = 1, align = "hv", axis = "tbl", rel_heights = c(.1, 2)))
+}
+```
+
+
+### Plot doublets on UMAP
+
+
+```{r fig.width = 14, fig.height = 6}
+doublet_methods <- c("DoubletFinder", "Scrublet", "Solo")
+for (i in seq_along(seurat_list_trim)) {
+    p_list <- list()
+    pt_size <- 4 * AutoPointSize(data = seurat_list_trim[[i]], raster = FALSE)
+    for (doublet_method in doublet_methods) {
+        p_list[[doublet_method]] <- DimPlot(object = seurat_list_trim[[i]],
+                                          group.by = doublet_method,
+                                          pt.size = min(4, pt_size),
+                                          cols = c("lightsteelblue2", "black"),
+                                          order = "Doublet",
+                                          raster = FALSE) +
+                                    NoAxes() +
+                                    coord_fixed() +
+                                    ggtitle(doublet_method)
+        if (doublet_method != "Solo") {
+            p_list[[doublet_method]] <- p_list[[doublet_method]] + NoLegend()
+        }
+    }
+    print(paste0("Predicted doublets for: ", unique(seurat_list_trim[[i]]$orig.ident)))
+    print(plot_grid(plotlist = p_list, ncol = 3, rel_widths = c(1, 1, 1.2)))
+}
+```
+
+
+
+
+### nUMI in doublets
+
+#### nUMI on a UMAP
+
+Plot the nUMI and nGenes on the UMAP
+
+```{r fig.width = 12, fig.height = 6}
+p_list <- list()
+my_features <- c("nFeature_RNA", "nCount_RNA")
+my_max_cut <- c(Inf, 20000)
+for (i in seq_along(seurat_list_trim)) {
+    pt_size <- 4 * AutoPointSize(data = seurat_list_trim[[i]], raster = FALSE)
+    for (ii in seq_along(my_features)) {
+        p_list[[ii]] <- FeaturePlot(object = seurat_list_trim[[i]],
+                                    max.cutoff = my_max_cut[[ii]],
+                                    features = my_features[[ii]],
+                                    pt.size = min(4, pt_size),
+                                    cols = c("lightsteelblue2", "black"),
+                                    order = TRUE,
+                                    raster = FALSE) +
+                            NoAxes() +
+                            coord_fixed()
+    }
+    title <- ggdraw() +
+        draw_label(unique(seurat_list_trim[[i]]@meta.data[["orig.ident"]]),
+        fontface = "bold",
+        x = 0,
+        hjust = 0,
+        size = 16)
+    p <- plot_grid(plotlist = p_list, ncol = 2)
+    print(plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1)))
+}
+```
+
+
+
+#### nUMI, singlet vs doublet
+
+First we merge the objects to make looking at all the metadata easier.
+
+```{r}
+if (length(seurat_list_trim) == 1) {
+    seurat_merged <- seurat_list_trim[[1]]
+} else {
+    seurat_merged <- merge(seurat_list_trim[[1]],
+                            unlist(seurat_list_trim[2:length(seurat_list_trim)]),
+                            merge.data = TRUE)
+}
+```
+
+
+
+
+Look at the number of UMI, number of genes, and other qc metrics, in the doublets vs singlets across the methods.
+
+
+```{r}
+options(scipen = 9999)
+for (i in seq_along(qc_params_plot)) {
+    print(paste0("Plotting values for: ", qc_params_plot[[i]]))
+    doublet_methods <- c("DoubletFinder", "Scrublet", "Solo")
+    for (doublet_method in doublet_methods) {
+        p <- tibble(sample = seurat_merged$orig.ident,
+                    metric = seurat_merged@meta.data[[qc_params_plot[[i]]]],
+                    doublets = seurat_merged@meta.data[[doublet_method]]) %>%
+                ggplot(aes(x = sample, y = metric, facets = doublets)) +
+                    labs(x = "Samples", y = qc_params_plot[[i]]) +
+                    geom_jitter(size = 0.01, alpha = 0.5, aes(colour = sample)) +
+                    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+                    geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+                    facet_wrap(~ doublets, ncol = 2) +
+                    geom_hline(yintercept = c(0, qc_params_plot_thesh[[i]]), linetype = "dashed") +
+                    ggtitle(doublet_method) +
+                    theme(plot.title = element_text(face = "bold"))
+        if (qc_params_plot[[i]] %in% c("nFeature_RNA", "nCount_RNA")) {
+            p <- p +
+                scale_y_continuous(trans = "log10") +
+                annotation_logticks(sides = "l")
+        }
+        print(p)
+    }
+}
+```
+
+
+
+
+
+# Doublets across cell types
+
+First let's extract some count data for a few genes.
+
+```{r}
+my_counts <- seurat_merged@assays$RNA@counts[rownames(seurat_merged@assays$RNA@counts) %in% marker_df$gene, ] %>%
+    t() %>%
+    as.data.frame() %>%
+    rownames_to_column("cell_id")
+gene_group_table <- seurat_merged@meta.data %>%
+    rownames_to_column("cell_id") %>%
+    select(cell_id, orig.ident, DoubletFinder, Scrublet, Solo) %>%
+    left_join(my_counts, by = "cell_id") %>%
+    gather("gene", "expression", -orig.ident, -cell_id, -DoubletFinder, -Scrublet, -Solo) %>%
+    gather("doublet_method", "call", -orig.ident, -cell_id, -gene, -expression)
+# head(gene_group_table)
+```
+
+
+
+
+In this next bit we're looking at the percent of doublets that are positive for a given GOI. Ideally each method should have a similar percent for a given GOI. Or in other words, there should be minimal variation within each row.
+
+
+```{r warning = F, message = F}
+gene_doublet_list <- list()
+for (marker in marker_df$gene) {
+    gene_doublet_list[[marker]] <- gene_group_table %>%
+        filter(call == "Doublet") %>%
+        filter(gene == marker) %>%
+        group_by(doublet_method) %>%
+        summarise(`% of doublets postive for ` = round(100 * sum(expression[gene == marker] != 0) / sum(gene == marker), digits = 1)) %>%
+        gather("gene_group", "percent", -doublet_method) %>%
+        spread(doublet_method, percent) %>%
+        mutate(gene_group = paste0(gene_group, marker))
+}
+gene_doublet_table <- bind_rows(gene_doublet_list)
+gene_doublet_table
+```
+
+
+
+Now we flip it around and look at the % of cells positive for a given marker that are doublets. Ideally within a method, each marker should give roughly the same percent. Or in other words, there should be minimal variation within each column.
+
+
+```{r warning = F, message = F}
+gene_doublet_list <- list()
+for (marker in marker_df$gene) {
+    gene_doublet_list[[marker]] <- gene_group_table %>%
+        filter(gene == marker) %>%
+        group_by(doublet_method) %>%
+        summarise(` cells that are doublets` = round(100 * sum(call[expression != 0 & gene == marker] == "Doublet") /
+                                                sum(gene[expression != 0] == marker),
+                                                digits = 1)
+                                                ) %>%
+        gather("gene_group", "percent", -doublet_method) %>%
+        spread(doublet_method, percent) %>%
+        mutate(gene_group = paste0("% of ", marker, gene_group))
+}
+gene_doublet_table <- bind_rows(gene_doublet_list)
+gene_doublet_table
+```
+
+
+# Doublets by cluster
+
+
+Plot the proportion of cells that are singlets vs doublets by cluster.
+
+```{r clust_contrib_merged, fig.width = 10, fig.height = 4}
+doublet_methods <- c("DoubletFinder", "Scrublet", "Solo")
+for (i in seq_along(seurat_list_trim)) {
+    for (doublet_method in doublet_methods) {
+        p <- tibble(clust = seurat_list_trim[[i]]@active.ident,
+               doublet = seurat_list_trim[[i]]@meta.data[[doublet_method]]) %>%
+            ggplot(aes(x = clust, fill = doublet)) +
+                geom_bar(position = "fill", width = 1) +
+                scale_fill_manual(values = c("black", "lightsteelblue2")) +
+                ggtitle(paste0(doublet_method, " cluster contribution for ", unique(seurat_list_trim[[i]]$orig.ident))) +
+                labs(x = "Clusters", y = "Proportion of Cells") +
+                theme(axis.text.x = element_blank(),
+                      axis.ticks.x = element_blank(),
+                      legend.title = element_blank(),
+                      legend.position = "bottom",
+                      plot.title = element_text(face = "bold"))
+        print(p)
+    }
+}
+```
+
+
+
+
+
+# Remove doublets
+
+
+```{r remove-doublets}
+# add remove doublets and save a trimed seurat list
+all_doublets <- all_doublets %>% mutate(doublet_count = rowSums(.[2:4] == "Doublet"))
+singlets <- all_doublets %>% filter(doublet_count < cells_remove) %>% select(cell_id)
+doublets <- all_doublets %>% filter(doublet_count >= cells_remove) %>% select(cell_id)
+
+seurat_merged <- AddMetaData(object = seurat_merged, metadata = all_doublets$doublet_count, col.name = "doublet_count")
+seurat_merged_singlets <- subset(x = seurat_merged, subset = doublet_count < cells_remove)
+seurat_list_trim_singlets <- SplitObject(object = seurat_merged_singlets, split.by = "orig.ident")
+```
+
+
+Object list before doublet removal
+
+```{r}
+seurat_list_trim
+```
+
+
+Object list after doublet removal
+
+```{r}
+seurat_list_trim_singlets
+```
+
+
+
+# Save data
+
+
+
+```{r save-data}
+write_csv(all_doublets,
+          paste0(doublet_path,
+                 dataset, "_",
+                 input_type, "_",
+                 "allcells_by_method.csv"),
+          col_names = TRUE)
+write_csv(singlets,
+          paste0(doublet_path,
+                 dataset, "_",
+                 input_type, "_",
+                 "singlets.csv"),
+          col_names = FALSE)
+write_csv(doublets,
+          paste0(doublet_path,
+                 dataset, "_",
+                 input_type, "_",
+                 "doublets.csv"),
+          col_names = FALSE)
+
+write_rds(x = seurat_list_trim_singlets,
+         file = paste0(objects_path,
+                      dataset, "_",
+                      input_type, "_",
+                      "doublets_removed_trimmed_seurat_list.rds")
+          )
+```
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (job_id != "local") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

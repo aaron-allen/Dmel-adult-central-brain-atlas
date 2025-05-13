@@ -1,0 +1,461 @@
+---
+title: "Doublet removal with DoubletFinder"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(utils)
+library(Seurat)
+library(DoubletFinder)
+library(tidyverse)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(ggcorrplot)
+library(ggpubr)
+library(corrr)
+library(future)
+```
+
+
+<!-- ```{r} -->
+<!-- source("my_doubletFinder_v3.R") -->
+<!-- ``` -->
+
+## other bits
+
+```{r run-time-tibble}
+process_time <- tibble()
+stop_the_clock <- function(chunk_name = "unnamed") {
+    temp <- tibble::tibble(Code_chunk = chunk_name,
+                           Start_time = start_time,
+                           Stop_time = Sys.time(),
+                           Run_time = difftime(Stop_time, Start_time, units = "mins")
+                           )
+    process_time <- dplyr::bind_rows(process_time, temp)
+    return(process_time)
+}
+```
+
+```{r parallel-options}
+if (parallelize) {
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+```
+
+```{r make-dir}
+dir.create(doubletfinder_output_path, recursive = TRUE, showWarnings = FALSE)
+```
+
+
+
+
+
+## Data
+
+Load the pre-processed data.
+
+```{r load-data}
+start_time <- Sys.time()
+seurat_list_trim <- read_rds(file = paste0(objects_path,
+                             dataset, "_",
+                             input_type, "_",
+                             "trimmed_preprocessed_seurat_list.rds")
+                )
+seurat_list_trim
+process_time <- stop_the_clock("load_data")
+```
+
+
+
+# Optimizing `pK`
+
+
+Once the data has been re-processed, we can run `paramSweep_v3` to find the "best" `pK` value. In my previous tests `pK` had **ZERO** effect on doublet prediction when I ran `DoubletFinder_v3` with all the possible `pK` values (at least the ones tested in `paramSweep`). So this step may not be necessary...
+
+
+```{r param-sweep}
+start_time <- Sys.time()
+bcmvn_tables <- list()
+for (i in seq_along(seurat_list_trim)) {
+    sweep_res_list <- paramSweep_v3(seurat_list_trim[[i]],
+                                          PCs = 1:curr_pc,
+                                          num.cores = doubletfinder_n_cores)
+    sweep_stats <- summarizeSweep(sweep_res_list, GT = FALSE)
+    bcmvn_tables[[i]] <- as_tibble(sweep_stats) %>%
+                    group_by(pK) %>%
+                    dplyr::summarize(MeanBC = mean(BCreal),
+                                     VarBC = sd(BCreal)^2,
+                                     BCmetric = mean(BCreal) / (sd(BCreal)^2))
+}
+write_rds(bcmvn_tables,
+          file = paste0(doubletfinder_output_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "doubletfinder_bcmvn_tables.rds")
+   )
+process_time <- stop_the_clock("param_sweep")
+```
+
+
+
+Now that we've run `paramSweep_v3` we can plot `BCmetric` as a function of `pK` to visualize the local maxima. (agian, I don't think this matters at all...)
+
+```{r plot-bcvm, fig.asp = 1}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_trim)) {
+    bcmvn_tables[[i]]$sample <- unique(seurat_list_trim[[i]]$orig.ident)
+}
+btables <- bind_rows(bcmvn_tables)
+btables %>%
+    mutate(pK = as.numeric(pK),
+           sample = factor(sample,
+           levels = unique(sample))) %>%
+    ggplot(aes(x = pK, y = BCmetric)) +
+        geom_point() +
+        geom_line() +
+        facet_wrap(~sample, ncol = 2, scales = "free_y")
+process_time <- stop_the_clock("plot_bcvm")
+```
+
+
+
+# Run `DoubletFinder`
+
+
+
+```{r doublet-finder}
+start_time <- Sys.time()
+if (parallelize) {
+    plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+
+if (normalization == "SCT") {
+    df_sct <- TRUE
+} else {
+    df_sct <- FALSE
+}
+
+
+for (i in seq_along(seurat_list_trim)) {
+    expected_doublet_rate <- 0.008 * dim(seurat_list_trim[[i]])[2] / 1000
+    n_exp_poi <- round(expected_doublet_rate * dim(seurat_list_trim[[i]])[2])
+    homotypic_prop <- modelHomotypic(Idents(seurat_list_trim[[i]]))
+    n_exp_poi_adj <- round(n_exp_poi * (1 - homotypic_prop))
+    pk_i <- bcmvn_tables[[i]] %>%
+        filter(BCmetric == max(BCmetric)) %>%
+        pull(pK) %>%
+        as.character() %>%
+        as.double()
+    reuse_pann <- paste0("pANN_0.25_", pk_i, "_", n_exp_poi)
+
+    # seurat_list_trim[[i]] <- my_doubletFinder_v3(seurat_list_trim[[i]],
+    #                              PCs = 1:curr_pc,
+    #                              pN = 0.25,
+    #                              pK = pk_i,
+    #                              nExp = n_exp_poi,
+    #                              reuse.pANN = FALSE,
+    #                              sct = df_sct,
+    #                              reg_vars = setdiff(vars_to_regress, "orig.ident"))
+    # seurat_list_trim[[i]] <- my_doubletFinder_v3(seurat_list_trim[[i]],
+    #                              PCs = 1:curr_pc,
+    #                              pN = 0.25,
+    #                              pK = pk_i,
+    #                              nExp = n_exp_poi_adj,
+    #                              reuse.pANN = reuse_pann,
+    #                              sct = df_sct,
+    #                              reg_vars = setdiff(vars_to_regress, "orig.ident"))
+    seurat_list_trim[[i]] <- doubletFinder_v3(seurat_list_trim[[i]],
+                                 PCs = 1:curr_pc,
+                                 pN = 0.25,
+                                 pK = pk_i,
+                                 nExp = n_exp_poi,
+                                 reuse.pANN = FALSE,
+                                 sct = df_sct)
+    seurat_list_trim[[i]] <- doubletFinder_v3(seurat_list_trim[[i]],
+                                 PCs = 1:curr_pc,
+                                 pN = 0.25,
+                                 pK = pk_i,
+                                 nExp = n_exp_poi_adj,
+                                 reuse.pANN = reuse_pann,
+                                 sct = df_sct)
+}
+write_rds(x = seurat_list_trim,
+           file = paste0(doubletfinder_output_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "doubletfinder_seurat_list.rds")
+            )
+if (parallelize) {
+    plan("sequential")
+}
+process_time <- stop_the_clock("doublet_finder")
+```
+
+
+```{r add-meta-data}
+for (i in seq_along(seurat_list_trim)) {
+  if (sum(grepl(pattern = "DF.classifications",
+                x = colnames(seurat_list_trim[[i]]@meta.data))) == 2) {
+      print("Doublets predicted")
+      doublet_found <- seurat_list_trim[[i]]@meta.data %>%
+                          select(contains("DF.classifications")) %>%
+                          rownames_to_column("cell_id") %>%
+                          mutate(DF_classification = if_else((.[, 2] == "Doublet" & .[, 3] == "Doublet"),
+                                                             "Doublet_hi",
+                                                             if_else((.[, 2] == "Doublet" | .[, 3] == "Doublet"),
+                                                                     "Doublet_lo",
+                                                                     "Singlet")
+                                                          )
+                                  )
+  } else if (sum(grepl(pattern = "DF.classifications",
+                x = colnames(seurat_list_trim[[i]]@meta.data))) == 1) {
+      print("Only one set predicted")
+      doublet_found <- seurat_list_trim[[i]]@meta.data %>%
+                          select(contains("DF.classifications")) %>%
+                          rownames_to_column("cell_id") %>%
+                          mutate(DF_classification = .[, 2])
+  } else {
+      print("No doublets predicted")
+      doublet_found <- seurat_list_trim[[i]]@meta.data %>%
+                          rownames_to_column("cell_id") %>%
+                          select(cell_id) %>%
+                          mutate(DF_classification = "Singlet")
+  }
+
+  seurat_list_trim[[i]] <- AddMetaData(object = seurat_list_trim[[i]],
+                        metadata = doublet_found$DF_classification,
+                        col.name = "DF_classification")
+}
+```
+
+
+
+
+
+# Doublets on a UMAP
+
+We can now plot the predicted doublets on a UMAP for each sample.
+
+```{r plot-doublets, fig.width = 10, fig.height = 10}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list_trim)) {
+    pt_size <- 4 * AutoPointSize(data = seurat_list_trim[[i]], raster = FALSE)
+    p <- DimPlot(object = seurat_list_trim[[i]],
+                 group.by = "DF_classification",
+                 pt.size = min(4, pt_size),
+                 order = c("Doublet_hi", "Doublet_lo", "Singlet"),
+                 cols = c("lightsteelblue2", "black", "red")) +
+        NoAxes() +
+        coord_fixed() +
+        ggtitle(unique(seurat_list_trim[[i]]$orig.ident))
+    plot(p)
+}
+process_time <- stop_the_clock("plot_doublets")
+```
+
+
+
+# Number of doublets
+
+This isn't super meaningful, as `DoubletFinder` return exactly how many doublets you ask it for... But maybe there is some meaning to be gleaned from the predicted "homo-typic" vs. "hetero-typic".
+
+```{r num-doublets}
+start_time <- Sys.time()
+doublet_count <- list()
+for (i in seq_along(seurat_list_trim)) {
+    doublet_count[[i]] <- tibble(sample = unique(seurat_list_trim[[i]]$orig.ident),
+           num_cells = dim(seurat_list_trim[[i]])[2],
+           tot_doublets = sum(seurat_list_trim[[i]]$DF_classification != "Singlet"),
+           heterotypic = sum(seurat_list_trim[[i]]$DF_classification == "Doublet_hi"),
+           homotypic = sum(seurat_list_trim[[i]]$DF_classification == "Doublet_lo")
+           )
+
+}
+doublet_count <- bind_rows(doublet_count)
+doublet_count
+process_time <- stop_the_clock("num_doublets")
+```
+
+
+# Save Doublets
+
+```{r}
+doublet_calls <- list()
+for (i in seq_along(seurat_list_trim)) {
+    doublet_calls[[i]] <- seurat_list_trim[[i]]@meta.data %>%
+        select(contains("DF_classification")) %>%
+        rownames_to_column("cell_id") %>%
+        rename(DoubletFinder = DF_classification)
+}
+doublet_calls <- bind_rows(doublet_calls)
+
+write_csv(x = doublet_calls,
+          file = paste0(doubletfinder_output_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "doubletfinder_calls.csv"),
+          col_names = TRUE
+          )
+write_rds(x = seurat_list_trim,
+           file = paste0(doubletfinder_output_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "doubletfinder_seurat_list.rds")
+            )
+```
+
+
+
+
+
+
+# Run time
+
+```{r run-times}
+process_time
+```
+
+```{r plot-run-times, fig.width = 10, fig.height = 4}
+process_time$Code_chunk <- factor(process_time$Code_chunk, levels = rev(process_time$Code_chunk))
+process_time %>%
+    ggplot(aes(x = Code_chunk, y = Run_time, fill = Run_time)) +
+    geom_col(width = 0.8) +
+    xlab("Code Chunk") +
+    ylab("Run Time (mins)") +
+    coord_flip()
+```
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (job_id != "local") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

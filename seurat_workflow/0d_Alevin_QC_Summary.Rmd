@@ -1,0 +1,618 @@
+---
+title: "Alevin QC Plots"
+description: description
+author:
+  - "Modified by - Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+
+<style>
+   tbody tr:nth-child(odd){
+    background-color: #D6E0F5;
+  }
+</style>
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+```{r echo = FALSE, cache = FALSE}
+options(scipen = 9999)
+```
+
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+## Parameters
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+if (is.na(params_file)) {
+    params_file <- "pipeline_R_params.R"
+}
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+Get the name of the machine that this is running on.  If running on my local desktop ("mentok"), then append to the `raw_path` variable.
+
+```{r is-local}
+local_path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if (curr_machine == "mentok") {
+    local_path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+local_path_mod
+```
+
+```{r adjust-path}
+raw_path <- paste0(local_path_mod, raw_path)
+raw_path
+```
+
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(alevinQC)
+library(cowplot)
+library(colorspace)
+```
+
+
+## Functions
+
+### Timer function
+
+```{r run-time-tibble}
+process_time <- tibble()
+stop_the_clock <- function(chunk_name = "unnamed") {
+    temp <- tibble::tibble(Code_chunk = chunk_name,
+                           Start_time = start_time,
+                           Stop_time = Sys.time(),
+                           Run_time = difftime(Stop_time, Start_time, units = "mins")
+                           )
+    process_time <- dplyr::bind_rows(process_time, temp)
+    return(process_time)
+}
+```
+
+
+
+
+
+### Summary table functions
+
+```{r}
+collate_summary <- function(alevinqc_list, dataset) {
+
+    summary_table <- data.frame()
+    for (i in seq_along(alevinqc_list)) {
+        temp_summary <- alevinqc_list[[i]]$summaryTables[[dataset]] %>%
+            as.data.frame() %>%
+            rownames_to_column("Features") %>%
+            rename(!!sample_names[[i]] := "V1")
+        if (i == 1) {
+            summary_table <- temp_summary
+        } else {
+            summary_table <- left_join(x = summary_table, y = temp_summary, by = c("Features"))
+        }
+    }
+    summary_table <- summary_table %>%
+        gather("Sample", "Value", -Features) %>%
+        mutate(Value = as.numeric(str_remove(string = Value, pattern = "%")))
+    return(summary_table)
+
+}
+```
+
+
+```{r}
+plot_summary <- function(summary_table, title) {
+
+    my_variables <- unique(summary_table$Features)
+    for (i in seq_along(my_variables)) {
+        p1 <- summary_table %>%
+            filter(Features == my_variables[[i]]) %>%
+            spread("Features", "Value") %>%
+            rename(my_variable = my_variables[[i]]) %>%
+            ggplot(aes(x = factor(Sample, level = unlist(sample_names)),
+                       y = my_variable,
+                       color = my_variable,
+                       fill = my_variable)) +
+                geom_bar(stat = "identity") +
+                ylab(my_variables[[i]]) +
+                ggtitle(title) +
+                theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      legend.position = "none",
+                      plot.title = element_text(face = "bold"),
+                      axis.title.x = element_blank())
+        if (grepl(pattern = "Percent mapped", x = my_variables[[i]])) {
+            p1 <- p1 + ylim(0, 100)
+        }
+        plot(p1)
+    }
+
+}
+```
+
+
+
+### CB table functions
+
+```{r}
+collate_cb_table <- function(alevinqc_list, umi_thresh) {
+
+    summary_table <- list()
+    for (i in seq_along(alevinqc_list)) {
+
+        summary_table[[i]] <- alevin_list[[i]]$cbTable %>%
+            filter(totalUMICount >= umi_thresh) %>%
+            select(-CB, -ranking, -inFirstWhiteList, -inFinalWhiteList) %>%
+            summarise_all(list(mean, median), na.rm = TRUE) %>%
+            gather("Feature", "Value") %>%
+            mutate(Avg_Type = if_else(grepl(pattern = "_fn1", x = Feature), "mean", "median"),
+                   Feature = str_remove(string = Feature, pattern = "_fn[:digit:]"),
+                   Sample = sample_names[[i]])
+    }
+    summary_table <- bind_rows(summary_table)
+    return(summary_table)
+
+}
+```
+
+
+
+```{r}
+plot_cb_summary <- function(summary_table, avg_type, umi_thresh) {
+
+    my_variables <- unique(cb_table_summary$Feature)
+    for (i in seq_along(my_variables)) {
+        p1 <- cb_table_summary %>%
+            filter(Feature == my_variables[[i]]) %>%
+            filter(Avg_Type == avg_type) %>%
+            ggplot(aes(x = factor(Sample, level = unlist(sample_names)),
+                       y = Value,
+                       color = Value,
+                       fill = Value)) +
+                geom_bar(stat = "identity") +
+                ylab(my_variables[[i]]) +
+                ggtitle(paste0(avg_type, ",  ", "UMI >= ", umi_thresh)) +
+                theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      legend.position = "none",
+                      plot.title = element_text(face = "bold"),
+                      axis.title.x = element_blank())
+        if (grepl(pattern = "Rate", x = my_variables[[i]])) {
+            p1 <- p1 + ylim(0, 1)
+        }
+        plot(p1)
+    }
+
+}
+```
+
+
+### Adjusted reads in cells function
+
+```{r}
+reads_in_cells_adj <- function(alevinqc_list, umi_thresh) {
+
+    in_cells_table <- list()
+    for (i in seq_along(alevinqc_list)) {
+        in_cells_table[[i]] <- tibble(Sample = sample_names[[i]],
+            total_reads = sum(alevinqc_list[[i]]$cbTable$originalFreq, na.rm = TRUE),
+            read_in_cells = sum(alevinqc_list[[i]]$cbTable$originalFreq[alevinqc_list[[i]]$cbTable$totalUMICount >= umi_thresh],
+                                na.rm = TRUE),
+            percent_reads_in_cells = 100 * read_in_cells / total_reads
+            )
+    }
+    in_cells_table <- bind_rows(in_cells_table)
+    return(in_cells_table)
+
+}
+```
+
+
+
+
+# Load the data
+
+
+
+```{r load-data}
+start_time <- Sys.time()
+print("Loading Alevin data")
+alevin_list <- list()
+for (i in seq_along(raw_names)) {
+    print(paste0("  Reading ", raw_names[[i]], " 10x data"))
+    alevin_list[[i]] <- readAlevinQC(baseDir = paste0(raw_path, raw_names[[i]]))
+}
+Sys.time()-start_time
+process_time <- stop_the_clock("load_data")
+```
+
+<!-- ```{r load-data} -->
+<!-- start_time <- Sys.time() -->
+<!-- print("Loading Alevin data") -->
+<!-- alevin_list2 <- list() -->
+<!-- alevin_list2 <- lapply(X = raw_names, function(x) readAlevinQC(baseDir = paste0(raw_path, x))) -->
+<!-- Sys.time()-start_time -->
+<!-- #process_time <- stop_the_clock("load_data") -->
+<!-- ``` -->
+
+
+
+
+
+
+# Summary table plots
+
+
+## Full set of cell barcodes
+
+```{r}
+full_dataset_summary <- collate_summary(alevinqc_list = alevin_list, dataset = "fullDataset")
+full_dataset_summary
+```
+
+```{r}
+write_csv(x = spread(data = full_dataset_summary, key = Sample, value = Value), file = "../../proj068/analyses/alevin/fru_iso/full_dataset_summary.csv")
+```
+
+
+```{r}
+full_dataset_summary %>% 
+    spread(Sample, Value) %>% 
+    knitr::kable()
+```
+
+
+
+
+```{r fig.width=4, fig.height=6}
+plot_summary(summary_table = full_dataset_summary, title = "Full set of cell barcodes")
+```
+
+
+## Initial whitelist
+
+
+```{r}
+init_whitelist_summary <- collate_summary(alevinqc_list = alevin_list, dataset = "initialWhitelist")
+init_whitelist_summary
+```
+
+
+```{r}
+write_csv(x = spread(data = init_whitelist_summary, key = Sample, value = Value), file = "../../proj068/analyses/alevin/fru_iso/init_whitelist_summary.csv")
+```
+
+
+```{r}
+init_whitelist_summary %>% 
+    spread(Sample, Value) %>% 
+    knitr::kable()
+```
+
+
+
+```{r fig.width=4, fig.height=6}
+plot_summary(summary_table = init_whitelist_summary, title = "Initial whitelist")
+```
+
+
+## Final whitelist
+
+```{r}
+final_whitelist_summary <- collate_summary(alevinqc_list = alevin_list, dataset = "finalWhitelist")
+final_whitelist_summary
+```
+
+
+
+```{r}
+write_csv(x = spread(data = final_whitelist_summary, key = Sample, value = Value), file = "../../proj068/analyses/alevin/fru_iso/final_whitelist_summary.csv")
+```
+
+```{r}
+final_whitelist_summary %>% 
+    spread(Sample, Value) %>% 
+    knitr::kable()
+```
+
+
+
+```{r fig.width=4, fig.height=6}
+plot_summary(summary_table = final_whitelist_summary, title = "Final whitelist")
+```
+
+
+
+
+
+
+
+
+# Average feature plots
+
+
+## UMI >= 0
+
+```{r}
+cb_table_summary <- collate_cb_table(alevinqc_list = alevin_list, umi_thresh = 0)
+cb_table_summary
+```
+
+
+```{r}
+write_csv(x = spread(data = cb_table_summary, key = Sample, value = Value), file = "../../proj068/analyses/alevin/fru_iso/cb_table_summary_0UMI.csv")
+```
+
+
+
+### Mean
+
+```{r fig.width=4, fig.height=6}
+plot_cb_summary(summary_table = cb_table_summary, avg_type = "mean", umi_thresh = 0)
+```
+
+
+```{r}
+cb_table_summary %>% 
+    filter(Avg_Type == "mean") %>% 
+    spread(Sample, Value) %>% 
+    knitr::kable()
+```
+
+### Median
+
+```{r fig.width=4, fig.height=6}
+plot_cb_summary(summary_table = cb_table_summary, avg_type = "median", umi_thresh = 0)
+```
+
+
+
+
+```{r}
+cb_table_summary %>% 
+    filter(Avg_Type == "median") %>% 
+    spread(Sample, Value) %>% 
+    knitr::kable()
+```
+
+
+## UMI >= 200
+
+```{r}
+cb_table_summary <- collate_cb_table(alevinqc_list = alevin_list, umi_thresh = 200)
+cb_table_summary
+```
+
+```{r}
+write_csv(x = spread(data = cb_table_summary, key = Sample, value = Value), file = "../../proj068/analyses/alevin/fru_iso/cb_table_summary_200UMI.csv")
+```
+
+### Mean
+
+```{r fig.width=4, fig.height=6}
+plot_cb_summary(summary_table = cb_table_summary, avg_type = "mean", umi_thresh = 200)
+```
+
+
+```{r}
+cb_table_summary %>% 
+    filter(Avg_Type == "mean") %>% 
+    spread(Sample, Value) %>% 
+    knitr::kable()
+```
+
+### Median
+
+```{r fig.width=4, fig.height=6}
+plot_cb_summary(summary_table = cb_table_summary, avg_type = "median", umi_thresh = 200)
+```
+
+
+```{r}
+cb_table_summary %>% 
+    filter(Avg_Type == "median") %>% 
+    spread(Sample, Value) %>% 
+    knitr::kable()
+```
+
+
+# Adjusted Reads in Cells
+
+
+```{r}
+reads_in_cells_table <- reads_in_cells_adj(alevinqc_list = alevin_list, umi_thresh = 200)
+reads_in_cells_table
+```
+
+```{r}
+reads_in_cells_table %>%
+    gather("Features", "Value", -Sample) %>% 
+    spread(Sample, Value)
+```
+
+
+
+```{r}
+write_csv(x = reads_in_cells_table %>%
+                gather("Features", "Value", -Sample) %>% 
+                spread(Sample, Value), 
+    file = "../../proj068/analyses/alevin/fru_iso/reads_in_cells_table.csv")
+```
+
+
+
+```{r}
+reads_in_cells_table %>% 
+    knitr::kable()
+```
+
+```{r fig.width=4, fig.height=6}
+reads_in_cells_table %>%
+    ggplot(aes(x = factor(Sample, level = unlist(sample_names)),
+               y = percent_reads_in_cells,
+               color = percent_reads_in_cells,
+               fill = percent_reads_in_cells)) +
+        geom_bar(stat = "identity") +
+        ylab("Percent Reads in Cells (%)") +
+        ggtitle(paste0("Read in Cells with UMI >= ", 200)) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1),
+              legend.position = "none",
+              plot.title = element_text(face = "bold"),
+              axis.title.x = element_blank())
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# Run time
+
+```{r run-times}
+process_time
+```
+
+```{r plot-run-times, fig.width = 10, fig.height = 5}
+process_time$Code_chunk <- factor(process_time$Code_chunk, levels = rev(process_time$Code_chunk))
+process_time %>%
+    ggplot(aes(x = Code_chunk, y = Run_time, fill = Run_time)) +
+    geom_col(width = 0.8) +
+    xlab("Code Chunk") +
+    ylab("Run Time (mins)") +
+    coord_flip()
+```
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (is.na(job_id)) {
+    job_id <- "interactive"
+}
+if (job_id != "local" && job_id != "interactive") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

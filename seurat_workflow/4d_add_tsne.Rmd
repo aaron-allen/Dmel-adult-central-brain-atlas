@@ -1,0 +1,261 @@
+---
+title: "Add tSNE to main object"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo=FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly=T)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+
+<!-- ```{r params-manual} -->
+<!-- source("/mnt/scratch/cgat_cluster/proj066/src/param_files/pipeline_R_params_local.R") -->
+<!-- source("param_files/pipeline_R_params.R") -->
+<!-- ``` -->
+
+
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+```{r run-number}
+run_number_4d <- commandArgs(trailingOnly = TRUE)[4]
+run_number_4d
+```
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+```
+
+
+## Load the data
+
+
+
+```{r load-data}
+if (remove_doublets == FALSE && remove_ambient == FALSE) {
+    path_modifier <- ""
+}
+if (remove_doublets == TRUE && remove_ambient == FALSE) {
+    path_modifier <- "_doublets_removed"
+}
+if (remove_doublets == FALSE && remove_ambient == TRUE) {
+    path_modifier <- "_ambient_removed"
+}
+if (remove_doublets == TRUE && remove_ambient == TRUE) {
+    path_modifier <- "_doublets_removed_ambient_removed"
+}
+
+core_object_path <- paste0(objects_path,
+                                  dataset, "_",
+                                  input_type, "_",
+                                  normalization, "_",
+                                  integration, "_")
+if (run_number_4d == 1) {
+    unannoated_object <- paste0(core_object_path, "integrated_seurat", path_modifier, ".rds")
+    diet_object <- paste0(core_object_path, "integrated_seurat", path_modifier, "_diet.rds")
+    annoated_object <- paste0(core_object_path, "integrated_seurat", path_modifier, "_annotated.rds")
+    
+    integrated_list <- list()
+    if (file.exists(unannoated_object)) {
+        integrated_list[["unannotated"]] <- read_rds(file = unannoated_object)
+    } 
+    if (file.exists(diet_object)) {
+        integrated_list[["diet"]] <- read_rds(file = diet_object)
+    } 
+    if (file.exists(annoated_object)) {
+        integrated_list[["annotated"]] <- read_rds(file = annoated_object)
+    } 
+    
+    tsne_embeddings <- read_rds(file = paste0(core_object_path,
+                                    "integrated_tsne_embeddings_",
+                                    path_modifier,
+                                    ".rds")
+                            )
+}
+if (run_number_4d == 2) {
+    # for each string in "annotation_cell_type" vector, we need to pass
+    # the arguement into the script for subclustering
+
+  
+    subcluster_celltype <- commandArgs(trailingOnly = TRUE)[5]
+    print(paste0("Loading for subclustering: ", subcluster_celltype))
+    integrated <- read_rds(file = paste0(objects_path,
+                                      dataset, "_",
+                                      input_type, "_",
+                                      normalization, "_",
+                                      integration, "_",
+                                      "integrated_seurat",
+                                      path_modifier, "_",
+                                      subcluster_celltype, "_",
+                                      "subclusting.rds")
+                           )
+  
+    curr_pc <- subcluster_pcs[which(annotation_cell_type == subcluster_celltype)]
+    curr_res <- subcluster_res[which(annotation_cell_type == subcluster_celltype)]
+
+    tsne_embeddings <- read_rds(file = paste0(objects_path,
+                                              dataset, "_",
+                                              input_type, "_",
+                                              normalization, "_",
+                                              integration, "_",
+                                              "integrated_tsne_embeddings",
+                                              path_modifier, "_",
+                                              subcluster_celltype, "_",
+                                              "subclusting.rds")
+                                )
+}
+```
+
+
+
+
+## Add tSNE to main object
+
+```{r add-tsne}
+tsnes <- names(tsne_embeddings@reductions) %>% str_subset("tsne") %>% str_subset("pcs")
+for (i in seq_along(tsnes)) {
+    for (tsne in tsnes) {
+        integrated@reductions[[tsne]] <- tsne_embeddings@reductions[[tsne]]
+    }
+    integrated@reductions[["tsne"]] <- tsne_embeddings@reductions[["tsne_200pcs"]]
+}
+```
+
+
+
+
+# Save data
+
+
+
+```{r save-end}
+if (run_number_4d == 1) {
+    
+    if (file.exists(unannoated_object)) {
+        write_rds(x = integrated_list[["unannotated"]], file = unannoated_object)
+    } 
+    if (file.exists(diet_object)) {
+        write_rds(x = integrated_list[["diet"]], file = diet_object)
+    } 
+    if (file.exists(annoated_object)) {
+        write_rds(x = integrated_list[["annotated"]], file = annoated_object)
+    } 
+
+}
+
+
+if (run_number_4d == 2) {
+    # for each string in "annotation_cell_type" vector, we
+    # need to pass the arguement into the script for subclustering
+    write_rds(x = integrated,
+              file = paste0(objects_path,
+                                      dataset, "_",
+                                      input_type, "_",
+                                      normalization, "_",
+                                      integration, "_",
+                                      "integrated_seurat",
+                                      path_modifier, "_",
+                                      subcluster_celltype, "_",
+                                      "subclusting.rds")
+            )
+}
+```
+
+
+
+# Run time
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

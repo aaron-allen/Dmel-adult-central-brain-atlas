@@ -1,0 +1,29 @@
+
+input: /t1-data/project/cncb/shared/proj079/analyses/alevin/fastq # 0 means current direcotry, 1 means fastq files are in data.dir in cwd , or a specific path to fastqs
+fastq_lanes: multiple  # either single or multiple
+alevin:
+    conda_env: alevin
+    index: /t1-data/project/cncb/shared/proj075/backup/1_genome_ref/fru_iso/dmel_all_r6.30_salmon_index
+    rna_memory: "10G"
+    threads: 12
+    library_type: ISR
+    tgmap: /t1-data/project/cncb/shared/proj075/backup/1_genome_ref/fru_iso/dmel_all_FruDsxIsoUnique-Gal4EGFP_r6.30_FBTr_geneSym_txp2gene.tsv
+    options: --chromium --dumpFeatures --dumpMtx --keepCBFraction 1  --maxNumBarcodes 737000  --freqThreshold 0 --noWhitelist
+
+R_path: /t1-data/project/cncb/shared/proj079/analyses/alevin/fru_iso/multiple/R
+
+emptydrops:
+    conda_env: alevin
+    filter_fdr: 0.001 # FDR filter for removal of barcodes with no cells
+    filter_empty: 1 # Yes (1) or No(0) , should barcodes estimated to have no cells be removed from the output object
+    filter_genes: 1 # Yes (1) or No (0), Default (0)   should rRNA, rProt, mito and hsp genes be filtered out from the counts matrix before running empty drops
+    plot_empty_pval: 1 # Yes (1) or No(0) , should distribution of p-values fro assumed empty droplets be plotted
+    lower: 100  # A numeric scalar specifying the lower bound on the total UMI count, at or below which all barcodes are assumed to correspond to empty droplets
+    niters: 10000 # An integer scalar specifying the number of iterations to use for the Monte Carlo p-value calculations
+    test_ambient: 0 # Yes (1) or No(0) A logical scalar indicating whether results should be returned for barcodes with totals less than or equal to lower
+    ignore: 0  # A numeric scalar specifying the lower bound on the total UMI count, at or below which barcodes will be ignored.0 means Null
+    retain: 0 #A numeric scalar specifying the threshold for the total UMI count above which all barcodes are assumed to contain cells . 0 means NULL
+    figures_dir: /t1-data/project/cncb/shared/proj079/analyses/alevin/fru_iso/multiple/figures_dir # "directory path for plots"
+    barcode_plot_function: Alevin_dropletBarcodePlot.R
+    memory: "10G"
+    cores: 8

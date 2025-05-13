@@ -1,0 +1,869 @@
+---
+title: "Correlate from bulk"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+Get the name of the machine that this is running on.  If running on my local desktop ("mentok"), then append to the `raw_path` variable.
+
+```{r is-local}
+local_path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if (curr_machine == "mentok") {
+    local_path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+local_path_mod
+```
+
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(ggrepel)
+library(corrr)
+library(readxl)
+```
+
+
+
+## The Functions
+
+
+```{r}
+top_n_avg_exp <- function(object, markers_df, ident, n = 10, assay_use = "RNA", slot_use = "data", ...) { # nolint
+    Seurat::Idents(object) <- object@meta.data[[ident]]
+    top_n_markers <- markers_df %>%
+        dplyr::filter(p_val_adj < 0.05) %>%
+        dplyr::group_by(cluster) %>%
+        dplyr::top_n(n = n, wt = avg_log2FC) %>%
+        dplyr::pull(gene) %>%
+        unique()
+    avg_exp_by_cluster <- Seurat::AverageExpression(object = object,
+                                            assays = assay_use,
+                                            slot = slot_use,
+                                            features = top_n_markers)
+    return(avg_exp_by_cluster)
+}
+```
+
+
+```{r}
+corr_bulk_sc <- function(avg_exp_mat, bulk_df, assay_use = "RNA", ...) { # nolint
+    slim_corr <- avg_exp_mat[[assay_use]] %>%
+        as.data.frame() %>%
+        tibble::rownames_to_column("gene") %>%
+        dplyr::left_join(bulk_df, by = "gene") %>%
+        tibble::column_to_rownames("gene") %>%
+        corrr::correlate(method = "spearman") %>%
+        corrr::shave() %>%
+        corrr::stretch() %>%
+        dplyr::filter(y %in% colnames(bulk_df) &
+               !x %in% colnames(bulk_df))
+    return(slim_corr)
+}
+```
+
+
+```{r}
+plot_corr_gap <- function(object, ident, corr_df, cell_type, curr_pc, y_limits = NULL, ...) { # nolint
+    Seurat::Idents(object) <- object@meta.data[[ident]]
+    p1 <- corr_df %>%
+        dplyr::filter(y == cell_type) %>%
+        dplyr::mutate(x = forcats::fct_reorder(x, dplyr::desc(r))) %>%
+        ggplot2::ggplot(ggplot2::aes(x = x, y = r)) +
+            ggplot2::geom_point() +
+            ggplot2::expand_limits(x = c(-5, length(levels(corr_df$x)) + 5)) +
+            ggplot2::coord_cartesian(clip = "off") +
+            ggplot2::ggtitle(cell_type) +
+            ggplot2::ylab("Spearman Correlation") +
+            ggplot2::xlab("Clusters") +
+            ggplot2::theme_classic() +
+            ggplot2::theme(
+                plot.title = ggplot2::element_text(size = 24, face = "bold.italic"),
+                axis.title.x = ggplot2::element_text(size = 14, face = "bold"),
+                axis.title.y = ggplot2::element_text(size = 14, face = "bold"),
+                axis.text.x = ggplot2::element_blank(),
+                axis.ticks.x = ggplot2::element_blank()) +
+            ggrepel::geom_label_repel(aes(label = x),
+                  box.padding   = 0.35,
+                  point.padding = 0.5,
+                  segment.color = "grey50")
+    if (!is.null(y_limits)) {
+        p1 <- p1 + ggplot2::ylim(y_limits)
+    }
+    cluster_highlight <- corr_df %>%
+        dplyr::filter(y == cell_type) %>%
+        dplyr::top_n(n = 1, wt = r) %>%
+        dplyr::pull(x)
+    my_cells <- Seurat::WhichCells(object = object, idents = cluster_highlight)
+    p2 <- Seurat::DimPlot(object = object,
+                  cells.highlight = my_cells,
+                  cols = "lightsteelblue2",
+                  cols.highlight = "black",
+                  sizes.highlight = 0.4,
+                  pt.size = 0.01,
+                  raster = FALSE,
+                  reduction = paste0("tsne_", curr_pc, "pcs")) +
+        ggplot2::ggtitle(paste0("Cluster = ", cluster_highlight)) +
+        Seurat::NoLegend() +
+        ggplot2::coord_fixed()
+    p3 <- cowplot::plot_grid(p1, p2, ncol = 2, rel_widths = c(1, 2))
+    return(p3)
+}
+```
+
+
+
+
+
+
+
+
+
+
+## Load the data
+
+
+
+```{r load-data}
+if (remove_doublets == FALSE && remove_ambient == FALSE) {
+    path_modifier <- ""
+}
+if (remove_doublets == TRUE && remove_ambient == FALSE) {
+    path_modifier <- "_doublets_removed"
+}
+if (remove_doublets == FALSE && remove_ambient == TRUE) {
+    path_modifier <- "_ambient_removed"
+}
+if (remove_doublets == TRUE && remove_ambient == TRUE) {
+    path_modifier <- "_doublets_removed_ambient_removed"
+}
+integrated <- read_rds(file = paste0(objects_path,
+                                  dataset, "_",
+                                  input_type, "_",
+                                  normalization, "_",
+                                  integration, "_",
+                                  "integrated_seurat",
+                                  path_modifier,
+                                  ".rds")
+                          )
+```
+
+
+
+
+```{r,fig.width=16, fig.height=10}
+pt_size <- AutoPointSize(data = integrated, raster = FALSE)
+DimPlot(object = integrated,
+        reduction = paste0("umap_", curr_pc, "pcs"),
+        group.by = "RNA_snn_res.10",
+        pt.size = pt_size,
+        repel = TRUE,
+        label = TRUE,
+        label.size = 5) +
+  NoLegend() +
+  coord_fixed()
+```
+
+
+
+
+# Cluster Markers
+
+
+```{r}
+list.files("../../proj136/analyses/markers/", pattern = ".csv")
+```
+
+```{r}
+cluster_markers <- read_csv(file = "../../proj136/analyses/markers/New_Meta_cbNeuron_PUBnofacs_v1_alevin_LogNormalize_harmony_RNA_snn_res.10_RNA_cluster_markers_doublets_removed.csv") %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(avg_log2FC > 0.8) %>%
+    filter(pct.1 > 0.25)
+```
+
+
+<!-- ```{r} -->
+<!-- cluster_markers <- read_csv(file = paste0(objects_path, -->
+<!--                           "../markers/", -->
+<!--                           dataset, "_", -->
+<!--                           input_type, "_", -->
+<!--                           normalization, "_", -->
+<!--                           integration, "_", -->
+<!--                           "cluster_markers", -->
+<!--                           path_modifier, -->
+<!--                           ".csv") -->
+<!--                           ) -->
+<!-- head(cluster_markers) -->
+<!-- ``` -->
+
+
+
+
+
+
+# Wolf et al 2024 - Central Complex
+
+```{r}
+central_complex <- read_xlsx(path = paste0(local_path_mod, wolf_path), 
+                             sheet = "combined.cells.cpm.updated", 
+                             skip = 0) %>% 
+  dplyr::rename("FBgn" = "...1") %>% 
+  # dplyr::rename("FBgn" = "X1") %>% 
+  select(-gene_class, -gene_symbol, -qRNA_10_pg, -gene_name, -GO_terms, -transcript_ids)
+head(central_complex)
+```
+
+
+```{r}
+fbgn_gene <- read_csv(paste0(local_path_mod, fbgn_gene_path))
+head(fbgn_gene)
+```
+
+
+```{r}
+central_complex_log <- fbgn_gene %>%
+    select(FBgn, gene_symbol_r6.30) %>%
+    unique() %>%
+    drop_na() %>%
+    inner_join(central_complex, by = "FBgn") %>%
+    select(-FBgn, -contains("_CBqRNA")) %>%
+    rename("gene" = "gene_symbol_r6.30") %>%
+    # gather("cell_type", "expression",  -gene) %>%
+    # group_by(cell_type, gene) %>%
+    # spread("cell_type", "expression") %>%
+    column_to_rownames("gene") %>%
+    log1p() %>%
+    rownames_to_column("gene")
+head(central_complex_log)
+```
+
+
+
+## Correlate
+
+
+
+```{r}
+merged_avg_exp_by_cluster <- top_n_avg_exp(object = integrated,
+                                           markers_df = cluster_markers,
+                                           ident = "RNA_snn_res.10",
+                                           n = 10,
+                                           assay_use = "RNA",
+                                           slot_use = "data")
+merged_cx_slim_corr <- corr_bulk_sc(avg_exp_mat = merged_avg_exp_by_cluster, bulk_df = central_complex_log, assay_use = "RNA")
+```
+
+
+<!-- ```{r} -->
+<!-- merged_cx_slim_corr <- merged_cx_slim_corr %>% mutate(x = str_remove(x, "g")) -->
+<!-- merged_cx_slim_corr -->
+<!-- ``` -->
+
+
+## Plot
+
+```{r fig.width=12, fig.height=6, warning=FALSE, message=FALSE}
+Idents(integrated) <- integrated@meta.data[["RNA_snn_res.10"]]
+cell_types <- unique(merged_cx_slim_corr$y)
+for (i in seq_along(cell_types)) {
+    p1 <- plot_corr_gap(object = integrated,
+                        ident = "RNA_snn_res.10",
+                        curr_pc = 240,
+                        corr_df = merged_cx_slim_corr,
+                        cell_type = cell_types[[i]],
+                        y_limits = c(0, 1))
+    plot(p1)
+}
+```
+
+
+
+
+
+
+<!-- # Abruzzi et al 2017 - clock neurons -->
+
+
+
+<!-- ```{r} -->
+<!-- dn1 <- read_tsv(file = paste0(local_path_mod, abruzzi_path)) %>% -->
+<!--     rename("gene" = "X2") -->
+<!-- head(dn1) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- dn1_log <- dn1 %>% -->
+<!--     gather("sample", "expression", -Symbol, -gene) %>% -->
+<!--     group_by(sample, gene) %>% -->
+<!--     summarise(sum_exp = sum(expression)) %>% -->
+<!--     spread("sample", "sum_exp") %>% -->
+<!--     unique() %>% -->
+<!--     drop_na() %>% -->
+<!--     column_to_rownames("gene") %>% -->
+<!--     log1p() %>% -->
+<!--     rownames_to_column("gene") -->
+<!-- head(dn1_log) -->
+<!-- ``` -->
+
+
+
+<!-- ## Correlate -->
+
+
+
+<!-- ```{r} -->
+<!-- merged_avg_exp_by_cluster <- top_n_avg_exp(object = integrated, -->
+<!--                                            markers_df = cluster_markers, -->
+<!--                                            ident = "RNA_snn_res.10", -->
+<!--                                            n = 10, -->
+<!--                                            assay_use = "RNA", -->
+<!--                                            slot_use = "data") -->
+<!-- merged_dn1_slim_corr <- corr_bulk_sc(avg_exp_mat = merged_avg_exp_by_cluster, bulk_df = dn1_log, assay_use = "RNA") -->
+<!-- ``` -->
+
+
+<!-- ## Plot -->
+
+<!-- ```{r fig.width=12, fig.height=6, warning=FALSE, message=FALSE} -->
+<!-- Idents(integrated) <- integrated@meta.data[["RNA_snn_res.10"]] -->
+<!-- cell_types <- unique(merged_dn1_slim_corr$y) -->
+<!-- for (i in seq_along(cell_types)) { -->
+<!--     p1 <- plot_corr_gap(object = integrated, -->
+<!--                         ident = "RNA_snn_res.10", -->
+<!--                         curr_pc = 240, -->
+<!--                         corr_df = merged_dn1_slim_corr, -->
+<!--                         cell_type = cell_types[[i]], -->
+<!--                         y_limits = c(0, 1)) -->
+<!--     plot(p1) -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+# Turner-Evans et al 2021 - Central Complex
+
+```{r}
+central_complex <- read_xlsx(path = paste0(local_path_mod, turner_evans_path), skip = 3)
+head(central_complex)
+```
+
+
+```{r}
+fbgn_gene <- read_csv(paste0(local_path_mod, fbgn_gene_path))
+head(fbgn_gene)
+```
+
+
+```{r}
+central_complex_log <- fbgn_gene %>%
+    select(FBgn, gene_symbol_r6.25) %>%
+    unique() %>%
+    drop_na() %>%
+    inner_join(central_complex, by = c("FBgn" = "cell type")) %>%
+    select(-FBgn, -contains("Whole Brain")) %>%
+    rename("gene" = "gene_symbol_r6.25") %>%
+    gather("cell_type", "expression",  -gene) %>%
+    mutate(cell_type = str_remove(cell_type, pattern = "\\...[:digit:][:digit:]")) %>%
+    mutate(cell_type = str_remove(cell_type, pattern = "\\...[:digit:]")) %>%
+    group_by(cell_type, gene) %>%
+    summarise(avg_exp = mean(expression)) %>%
+    spread("cell_type", "avg_exp") %>%
+    column_to_rownames("gene") %>%
+    log1p() %>%
+    rownames_to_column("gene")
+head(central_complex_log)
+```
+
+
+
+## Correlate
+
+
+
+```{r}
+merged_avg_exp_by_cluster <- top_n_avg_exp(object = integrated,
+                                           markers_df = cluster_markers,
+                                           ident = "RNA_snn_res.10",
+                                           n = 10,
+                                           assay_use = "RNA",
+                                           slot_use = "data")
+merged_cx_slim_corr <- corr_bulk_sc(avg_exp_mat = merged_avg_exp_by_cluster, bulk_df = central_complex_log, assay_use = "RNA")
+```
+
+
+## Plot
+
+```{r fig.width=12, fig.height=6, warning=FALSE, message=FALSE}
+Idents(integrated) <- integrated@meta.data[["RNA_snn_res.10"]]
+cell_types <- unique(merged_cx_slim_corr$y)
+for (i in seq_along(cell_types)) {
+    p1 <- plot_corr_gap(object = integrated,
+                        ident = "RNA_snn_res.10",
+                        curr_pc = 240,
+                        corr_df = merged_cx_slim_corr,
+                        cell_type = cell_types[[i]],
+                        y_limits = c(0, 1))
+    plot(p1)
+}
+```
+
+
+
+
+
+
+<!-- # Abruzzi et al 2017 - clock neurons -->
+
+
+
+<!-- ```{r} -->
+<!-- dn1 <- read_tsv(file = paste0(local_path_mod, abruzzi_path)) %>% -->
+<!--     rename("gene" = "X2") -->
+<!-- head(dn1) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- dn1_log <- dn1 %>% -->
+<!--     gather("sample", "expression", -Symbol, -gene) %>% -->
+<!--     group_by(sample, gene) %>% -->
+<!--     summarise(sum_exp = sum(expression)) %>% -->
+<!--     spread("sample", "sum_exp") %>% -->
+<!--     unique() %>% -->
+<!--     drop_na() %>% -->
+<!--     column_to_rownames("gene") %>% -->
+<!--     log1p() %>% -->
+<!--     rownames_to_column("gene") -->
+<!-- head(dn1_log) -->
+<!-- ``` -->
+
+
+
+<!-- ## Correlate -->
+
+
+
+<!-- ```{r} -->
+<!-- merged_avg_exp_by_cluster <- top_n_avg_exp(object = integrated, -->
+<!--                                            markers_df = cluster_markers, -->
+<!--                                            ident = "RNA_snn_res.10", -->
+<!--                                            n = 10, -->
+<!--                                            assay_use = "RNA", -->
+<!--                                            slot_use = "data") -->
+<!-- merged_dn1_slim_corr <- corr_bulk_sc(avg_exp_mat = merged_avg_exp_by_cluster, bulk_df = dn1_log, assay_use = "RNA") -->
+<!-- ``` -->
+
+
+<!-- ## Plot -->
+
+<!-- ```{r fig.width=12, fig.height=6, warning=FALSE, message=FALSE} -->
+<!-- Idents(integrated) <- integrated@meta.data[["RNA_snn_res.10"]] -->
+<!-- cell_types <- unique(merged_dn1_slim_corr$y) -->
+<!-- for (i in seq_along(cell_types)) { -->
+<!--     p1 <- plot_corr_gap(object = integrated, -->
+<!--                         ident = "RNA_snn_res.10", -->
+<!--                         curr_pc = 240, -->
+<!--                         corr_df = merged_dn1_slim_corr, -->
+<!--                         cell_type = cell_types[[i]], -->
+<!--                         y_limits = c(0, 1)) -->
+<!--     plot(p1) -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+# Aso et al 2019 - pam dan, kc
+
+
+
+
+```{r}
+my_files <- list.files("../../../aallen/reference_datasets/bulk/GSE139889_Aso_2019_KC_PAMDAN/data/") %>% str_subset(".csv")
+my_data <- list() 
+for (i in seq_along(my_files)) {
+    my_name <- my_files[[i]] %>% str_remove(".csv")
+    my_data[[my_name]] <- read_csv(paste0("../../../aallen/reference_datasets/bulk/GSE139889_Aso_2019_KC_PAMDAN/data/", my_files[[i]]), locale = readr::locale(encoding = "UTF-8"))    
+}
+my_data[["transcriptID_x_counts"]] <- my_data[["transcriptID_x_counts"]] %>% 
+    filter(!grepl(pattern = "DQ", x = transcript_id) & 
+               !grepl(pattern = "EF", x = transcript_id))
+my_data[["transcriptID_x_gene"]] <- my_data[["transcriptID_x_gene"]] %>% 
+    filter(!grepl(pattern = "DQ", x = transcript_id) & 
+               !grepl(pattern = "EF", x = transcript_id)) %>% 
+    mutate(gene_symbol = if_else(gene_symbol == "01-Dec", "dec-1",gene_symbol)) %>% 
+    mutate(gene_symbol = if_else(gene_symbol == "01-Sep", "Sep1",gene_symbol)) %>% 
+    mutate(gene_symbol = if_else(gene_symbol == "02-Sep", "Sep2",gene_symbol)) %>% 
+    mutate(gene_symbol = if_else(gene_symbol == "04-Sep", "Sep4",gene_symbol)) %>% 
+    mutate(gene_symbol = if_else(gene_symbol == "05-Sep", "Sep5",gene_symbol)) 
+my_data[["sampleID_x_celltype"]]$`Cell type`[my_data[["sampleID_x_celltype"]]$`Cell type` == "PMA-β1, PAM-β2"]
+my_data[["sampleID_x_celltype"]] <- my_data[["sampleID_x_celltype"]] %>% 
+    mutate(`Cell type` = str_replace(string = `Cell type`,
+                                     pattern = "PMA-β1, PAM-β2",
+                                     replacement = "PAM-β1, PAM-β2"),
+           Sex = str_replace(string = as.character(Sex), 
+                             pattern = "FALSE", 
+                             replacement = "female")
+           )
+sum_by_gene <- my_data[["transcriptID_x_gene"]] %>% 
+    mutate(gene_symbol = as.factor(gene_symbol)) %>% 
+    select(transcript_id, gene_symbol) %>% 
+    left_join(my_data[["transcriptID_x_counts"]], by = "transcript_id") %>% 
+    gather("Sample_ID", "value", -transcript_id, -gene_symbol) %>% 
+    left_join(select(my_data[["sampleID_x_celltype"]], Sample_ID, `Cell type`), by = "Sample_ID") %>% 
+    group_by(gene_symbol, `Cell type`, Sample_ID) %>%
+    drop_na() %>% 
+    summarise(value = sum(value))
+aso_etal_log <- sum_by_gene %>% 
+    dplyr::select(-Sample_ID) %>% 
+    dplyr::group_by(`Cell type`, gene_symbol) %>% 
+    dplyr::summarise(avg_exp = mean(value)) %>% 
+    tidyr::spread ("Cell type", "avg_exp") %>% 
+    column_to_rownames("gene_symbol") %>% 
+    log1p() %>% 
+    tibble::rownames_to_column("gene_symbol") %>% 
+    dplyr::rename("gene" = "gene_symbol")
+```
+
+
+## Correlate
+
+
+```{r}
+merged_avg_exp_by_cluster <- top_n_avg_exp(object = integrated, markers_df = cluster_markers, ident = "RNA_snn_res.10", n = 10, assay_use = "RNA", slot_use = "data")
+merged_aso_etal_slim_corr <- corr_bulk_sc(avg_exp_mat = merged_avg_exp_by_cluster, bulk_df = aso_etal_log, assay_use = "RNA")
+```
+
+
+<!-- ```{r} -->
+<!-- merged_aso_etal_slim_corr <- merged_aso_etal_slim_corr %>% mutate(x = str_remove(x, "g")) -->
+<!-- merged_aso_etal_slim_corr -->
+<!-- ``` -->
+
+
+## Plot
+
+```{r fig.width=12, fig.height=6, warning=FALSE, message=FALSE}
+Idents(integrated) <- integrated@meta.data[["RNA_snn_res.10"]]
+cell_types <- unique(merged_aso_etal_slim_corr$y)
+for (i in seq_along(cell_types)) {
+    p1 <- plot_corr_gap(object = integrated,
+                        ident = "RNA_snn_res.10",
+                        curr_pc = 240,
+                        corr_df = merged_cx_slim_corr,
+                        cell_type = cell_types[[i]],
+                        y_limits = c(0, 1))
+    plot(p1)
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Davis et al 2020
+
+```{r}
+davis_etal <- read_tsv(paste0(local_path_mod, davis_path)) %>%
+    rename("gene" = "X1")
+head(davis_etal)
+```
+
+
+```{r}
+colnames(davis_etal)
+```
+
+
+```{r}
+davis_slim_log <- davis_etal %>%
+    column_to_rownames("gene") %>%
+    log1p() %>%
+    rownames_to_column("gene")
+head(davis_slim_log)
+```
+
+
+
+## Correlate
+
+
+
+```{r}
+merged_avg_exp_by_cluster <- top_n_avg_exp(object = integrated,
+                                           markers_df = cluster_markers,
+                                           ident = "RNA_snn_res.10",
+                                           n = 10,
+                                           assay_use = "RNA",
+                                           slot_use = "data")
+merged_davis_slim_corr <- corr_bulk_sc(avg_exp_mat = merged_avg_exp_by_cluster, bulk_df = davis_slim_log, assay_use = "RNA")
+```
+
+
+## Plot
+
+```{r fig.width=12, fig.height=6, warning=FALSE, message=FALSE}
+Idents(integrated) <- integrated@meta.data[["RNA_snn_res.10"]]
+cell_types <- unique(merged_davis_slim_corr$y)
+for (i in seq_along(cell_types)) {
+    p1 <- plot_corr_gap(object = integrated,
+                        ident = "RNA_snn_res.10",
+                        curr_pc = 240,
+                        corr_df = merged_davis_slim_corr,
+                        cell_type = cell_types[[i]],
+                        y_limits = c(0, 1))
+    plot(p1)
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Konstantinides 2018 bulk
+
+```{r}
+konstantinides_bulk <- read_tsv(paste0(local_path_mod, konstantinides_path))
+head(konstantinides_bulk)
+```
+
+
+```{r}
+fbgn_gene <- read_csv(paste0(local_path_mod, fbgn_gene_path))
+head(fbgn_gene)
+```
+
+```{r}
+konstantinides_bulk <- fbgn_gene %>%
+    select(FBgn, gene_symbol_r6.25) %>%
+    unique() %>%
+    drop_na() %>%
+    inner_join(konstantinides_bulk, by = "FBgn") %>%
+    select(-FBgn) %>%
+    column_to_rownames("gene_symbol_r6.25") %>%
+    log1p() %>%
+    rownames_to_column("gene")
+head(konstantinides_bulk)
+```
+
+
+
+## Correlate
+
+
+```{r}
+avg_exp_by_cluster <- top_n_avg_exp(object = integrated, markers = cluster_markers, ident = "RNA_snn_res.10", n = 10)
+niko_slim_corr <- corr_bulk_sc(avg_exp_mat = avg_exp_by_cluster, bulk_df = konstantinides_bulk)
+```
+
+
+
+## Plot
+
+```{r fig.width=12, fig.height=6, warning=FALSE, message=FALSE}
+Idents(integrated) <- integrated@meta.data[["RNA_snn_res.10"]]
+cell_types <- unique(niko_slim_corr$y)
+for (i in seq_along(cell_types)) {
+    p1 <- plot_corr_gap(object = integrated,
+                        ident = "RNA_snn_res.10",
+                        curr_pc = 240,
+                        corr_df = niko_slim_corr,
+                        cell_type = cell_types[[i]],
+                        y_limits = c(0, 1))
+    plot(p1)
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- # Shretter et al 2020 - fru subtypes -->
+
+
+
+
+<!-- ```{r fig.width=21, fig.height=7} -->
+<!-- p_list <- list() -->
+<!-- genes <- c("fru", "dsx", "EGFP") -->
+<!-- for (i in seq_along(genes)) { -->
+<!--     p_list[[i]] <- FeaturePlot(object = integrated, features = genes[[i]], pt.size = 0.1, cols = c("lightsteelblue2", "black"), reduction = paste0("umap_", curr_pc, "pcs"), order = TRUE) + coord_fixed() -->
+<!-- } -->
+<!-- plot_grid(plotlist = p_list,  ncol = 3) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r fig.width=21, fig.height=7} -->
+<!-- p_list <- list() -->
+<!-- genes <- c("fru", "dsx", "EGFP") -->
+<!-- for (i in seq_along(genes)) { -->
+<!--     p_list[[i]] <- FeaturePlot(object = integrated, features = genes[[i]], pt.size = 0.1, cols = c("lightsteelblue2", "black"), reduction = "umap", order = TRUE) + coord_fixed() -->
+<!-- } -->
+<!-- plot_grid(plotlist = p_list,  ncol = 3) -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+# Run time
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

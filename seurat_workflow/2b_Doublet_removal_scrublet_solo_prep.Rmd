@@ -1,0 +1,226 @@
+---
+title: "Save filtered data for Scrublet and Solo"
+description: Reading in filtered objects and creating new filtered input data for Scrublet and Solo
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+```{r warning = FALSE, message = FALSE}
+library(tidyverse)
+library(Matrix)
+library(Seurat)
+library(DropletUtils)
+library(cowplot)
+```
+
+
+
+```{r run-time-tibble}
+process_time <- tibble()
+stop_the_clock <- function(chunk_name = "unnamed") {
+    temp <- tibble::tibble(Code_chunk = chunk_name,
+                           Start_time = start_time,
+                           Stop_time = Sys.time(),
+                           Run_time = difftime(Stop_time, Start_time, units = "mins")
+                           )
+    process_time <- dplyr::bind_rows(process_time, temp)
+    return(process_time)
+}
+```
+
+
+
+
+# Params
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+
+
+
+## Data
+
+```{r load-data}
+start_time <- Sys.time()
+seurat_list_trim <- read_rds(file = paste0(objects_path,
+                                 dataset, "_",
+                                 input_type, "_",
+                                 "trimmed_seurat_list.rds")
+                    )
+seurat_list_trim
+process_time <- stop_the_clock("load_data")
+```
+
+
+# Remove Sample Dirs
+
+Remove the auto generated directories for filtered inputs.
+
+```{r}
+removed_samples <- setdiff(list.dirs(scrublet_solo_prep_output_path, full.names = FALSE, recursive = FALSE), names(seurat_list_trim))
+removed_samples
+```
+
+
+```{r}
+for (i in seq_along(removed_samples)) {
+    unlink(paste0(scrublet_solo_prep_output_path, removed_samples[[i]]), recursive = TRUE)
+}
+```
+
+
+
+# Let's go
+
+
+```{r}
+# Alevin outputs are non-integers, so we probabilistically round the counts (borrowed from SoupX)
+round_to_int <- function(input) {
+    input@x <- floor(input@x) + rbinom(length(input@x), 1, input@x - floor(input@x))
+    return(input)
+}
+
+# my_reps <- names(seurat_list_trim)
+# dir.create(scrublet_solo_prep_output_path, recursive = TRUE, showWarnings = FALSE)
+
+for (i in seq_along(seurat_list_trim)) {
+    my_rep <- unique(seurat_list_trim[[i]]$orig.ident)
+    my_counts <- seurat_list_trim[[i]]@assays[["RNA"]]@counts
+    if (round_the_data) {
+        my_counts <- round_to_int(my_counts)
+    }
+    dir.create(paste0(scrublet_solo_prep_output_path, my_rep), recursive = TRUE, showWarnings = FALSE)
+    write10xCounts(path = paste0(scrublet_solo_prep_output_path, my_rep, "/"),
+                   x = my_counts,
+                   barcodes = colnames(my_counts) %>%
+                                   str_remove(paste0(my_rep, "_")) %>%       # we've added sample labels that need to be removed
+                                   str_c("-1"),                             # Solo expects a "-1" at the end of the cell id
+                   overwrite = TRUE,
+                   version = "3"
+                   )
+    # Scrublet (..I think..) still expects the CellRangerv2 naming so I make a copy of the "features" file.
+    file.copy(paste0(scrublet_solo_prep_output_path, my_rep, "/features.tsv.gz"),
+              paste0(scrublet_solo_prep_output_path, my_rep, "/genes.tsv.gz"))
+}
+```
+
+
+
+
+# Run time
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (job_id != "local") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+# Session info
+
+
+```{r session-info}
+sessionInfo()
+```

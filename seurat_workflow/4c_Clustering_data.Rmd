@@ -1,0 +1,875 @@
+---
+title: "Clustering of scRNA-Seq data"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())    # base_family = "Arial"))
+options(scipen = 9999)
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+if (is.na(params_file)) {
+    params_file <- "pipeline_R_params.R"
+}
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+```{r run-number}
+run_number_4c <- commandArgs(trailingOnly = TRUE)[4]
+run_number_4c
+```
+
+Get the name of the machine that this is running on.  If running on my local desktop ("mentok"), then append to the `reference_object_path` variable.
+
+```{r is-local}
+local_path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if (curr_machine == "mentok") {
+    local_path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+local_path_mod
+```
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(utils)
+library(Seurat)
+library(SingleCellExperiment)
+library(tidyverse)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(ggcorrplot)
+library(ggpubr)
+library(corrr)
+library(ape)        # used for phylogram during cluster collapse
+library(future)
+```
+
+
+
+
+```{r run-time-tibble}
+process_time <- tibble()
+stop_the_clock <- function(chunk_name = "unnamed") {
+    temp <- tibble::tibble(Code_chunk = chunk_name,
+                           Start_time = start_time,
+                           Stop_time = Sys.time(),
+                           Run_time = difftime(Stop_time, Start_time, units = "mins")
+                           )
+    process_time <- dplyr::bind_rows(process_time, temp)
+    return(process_time)
+}
+```
+
+
+
+```{r parallel-options}
+if (parallelize) {
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+```
+
+
+
+# The data
+
+## Load data
+
+```{r}
+warning(paste0("Dataset to be loaded is: ", dataset))
+```
+
+```{r load-data}
+start_time <- Sys.time()
+if (remove_doublets == FALSE && remove_ambient == FALSE) {
+    path_modifier <- ""
+}
+if (remove_doublets == TRUE && remove_ambient == FALSE) {
+    path_modifier <- "_doublets_removed"
+}
+if (remove_doublets == FALSE && remove_ambient == TRUE) {
+    path_modifier <- "_ambient_removed"
+}
+if (remove_doublets == TRUE && remove_ambient == TRUE) {
+    path_modifier <- "_doublets_removed_ambient_removed"
+}
+
+if (run_number_4c == 1) {
+    integrated <- read_rds(file = paste0(objects_path,
+                                      dataset, "_",
+                                      input_type, "_",
+                                      normalization, "_",
+                                      integration, "_",
+                                      "integrated_seurat",
+                                      path_modifier,
+                                      ".rds")
+                              )
+}
+if (run_number_4c == 2) {
+# for each string in "annotation_cell_type" vector, we need to pass the arguement into the script for subclustering
+    subcluster_celltype <- commandArgs(trailingOnly = TRUE)[5]
+    print(paste0("Loading for subclustering: ", subcluster_celltype))
+    integrated <- read_rds(file = paste0(objects_path,
+                                      dataset, "_",
+                                      input_type, "_",
+                                      normalization, "_",
+                                      integration, "_",
+                                      "integrated_seurat",
+                                      path_modifier, "_",
+                                      subcluster_celltype, "_",
+                                      "subclusting.rds")
+    )
+    curr_pc <- subcluster_pcs[which(annotation_cell_type == subcluster_celltype)]
+    curr_res <- subcluster_res[which(annotation_cell_type == subcluster_celltype)]
+}
+integrated
+process_time <- stop_the_clock("load_data")
+```
+
+
+
+```{r load-markers}
+start_time <- Sys.time()
+marker_df <- read_tsv(paste0(gmt_file_path), col_names = FALSE) %>%
+    select(-X2) %>%
+    gather("index", "gene", -X1) %>%
+    select(-index) %>%
+    rename(celltype = X1) %>%
+    drop_na() %>%
+    group_by(celltype) %>%
+    filter(celltype %in% qc_plot_cell_type) %>%
+    slice(1) %>%
+    arrange(celltype)
+marker_df
+process_time <- stop_the_clock("load_markers")
+```
+
+
+Then filter marker gene to make sure they are in the object.
+
+```{r genes-present}
+all_genes <- rownames(integrated)
+genes_not_found <- marker_df$gene[!marker_df$gene %in% all_genes]
+if (length(genes_not_found) > 0) {
+    warning(paste0("The following genes were not found: ", genes_not_found))
+    marker_df <- marker_df %>% filter(gene != genes_not_found)
+} else {
+    message(paste0("All genes present in data."))
+}
+```
+
+
+
+
+
+
+
+
+# Clustering
+
+```{r cluster-setup}
+start_time <- Sys.time()
+if (integration == "harmony") {
+    set_reduction <- "harmony"
+} else {
+    set_reduction <- "pca"
+}
+if (integration == "cca") {
+    default_assay <- "integrated"
+} else {
+    if (normalization == "SCT") {
+        default_assay <- "SCT"
+    }
+    if (normalization == "LogNormalize") {
+        default_assay <- "RNA"
+    }
+}
+graph_name <- paste0(default_assay, "_snn")
+
+print(paste0("Normalization is ", normalization))
+print(paste0("Integration is ", integration))
+print(paste0("Graph name is ", graph_name))
+
+
+DefaultAssay(object = integrated) <- default_assay
+DefaultAssay(object = integrated)
+```
+
+
+```{r neighbours}
+if (parallelize) {
+    # plan(futures_plan, workers = futures_n_cores)
+    options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
+}
+gc()
+integrated <- FindNeighbors(integrated,
+                           reduction = set_reduction,
+                           dims = 1:curr_pc,
+                           k.param = neighbours,
+                           # nn.method = nn_method,
+                           # nn.eps = nn_eps,
+                           # n.trees = nn_trees,
+                           force.recalc = TRUE,
+                           graph.name = graph_name,
+                           verbose = TRUE)
+gc()
+```
+
+
+```{r clustering}
+gc()
+integrated <- FindClusters(integrated,
+                          resolution = resolution_test,
+                          graph.name = graph_name,
+                          method = leiden_graph_method,
+                          algorithm = clustering_algorithm,
+                          group.singletons = group_singletons,
+                          verbose = TRUE)
+gc()
+
+### note: leiden clusterings start at 1, but louvain starts at 0
+###       to avoid issues with the cluster collapse function I'm decrementing the Idents by 1 if leiden is run
+if (clustering_algorithm == 4) {
+  clusters <- names(integrated@meta.data) %>% str_subset(graph_name)
+  for (my_cluster in clusters) {
+      integrated@meta.data[[my_cluster]] <- as.factor(as.numeric(integrated@meta.data[[my_cluster]]) - 1)
+  }
+}
+
+if (parallelize) {
+    plan("sequential")
+}
+process_time <- stop_the_clock("clustering")
+```
+
+
+```{r plot-num-clusters-func}
+plot_number_of_clusters <- function(.data) { # nolint
+    p <- .data %>%
+            tibble::rownames_to_column("cell") %>%
+            tidyr::gather(resolution, cluster, -cell) %>%
+            dplyr::mutate(cluster = as.double(cluster),
+                resolution = as.numeric(sub("^[^_]*_snn_res.", "", resolution))) %>%
+            dplyr::group_by(resolution) %>%
+            dplyr::summarize(ncluster = max(cluster, na.rm = TRUE)) %>%
+            dplyr::arrange(resolution) %>%
+            ggplot2::ggplot(aes(x = as.factor(resolution), y = ncluster)) +
+                ggplot2::geom_col() +
+                ggplot2::labs(x = "Resolution", y = "Number of clusters")
+    return(p)
+}
+```
+
+
+## Number of clusters per resolution
+
+```{r plot-num-clusters, warning = FALSE, message = FALSE}
+integrated@meta.data[, grep("*_snn", names(integrated@meta.data))] %>% plot_number_of_clusters
+```
+
+
+
+## DimPlot cluster resolutions
+
+```{r plot-clusters, fig.width = 12, fig.height = 12}
+start_time <- Sys.time()
+ident_meta_positions <- grep("*_snn", names(integrated@meta.data))
+pt_size <- 4 * AutoPointSize(data = integrated, raster = FALSE)
+
+for (i in seq_along(ident_meta_positions)) {
+    Idents(integrated) <- integrated@meta.data[, ident_meta_positions[[i]]]
+    print(DimPlot(integrated,
+                  reduction = paste0("umap_", curr_pc, "pcs"),
+                  label = TRUE,
+                  pt.size = min(4, pt_size),
+                  raster = FALSE) +
+            NoAxes() +
+            NoLegend() +
+            coord_fixed() +
+            theme(plot.title = element_text(size = 10, hjust = .5)) +
+            ggtitle(paste("Resolution = ", resolution_test[[i]]))
+        )
+}
+process_time <- stop_the_clock("plot_clusters")
+```
+
+
+
+
+## Plot single res
+
+```{r plot-clustering-dimplot, fig.asp = 1}
+start_time <- Sys.time()
+res_name <- paste0(graph_name, "_res.", curr_res)
+
+Idents(integrated) <- integrated$seurat_clusters <- integrated@meta.data[[res_name]]
+DimPlot(integrated, reduction = paste0("umap_", curr_pc, "pcs"), label = TRUE, pt.size = min(4, pt_size), raster = FALSE) +
+  NoAxes() +
+  NoLegend() +
+  coord_fixed() +
+  ggtitle(paste0("Tissue = ", dataset),
+          subtitle = paste0("PC = ", curr_pc,
+                            ", Resolution = ", curr_res,
+                            ", Normalization = ", normalization,
+                            ", Integration = ", integration
+                            )
+          )
+process_time <- stop_the_clock("plot_clustering_dimplot")
+```
+
+
+```{r clust-contrib, fig.width = 12, fig.height = 6}
+start_time <- Sys.time()
+tibble(clust = integrated@active.ident,
+           samp = integrated$experiment) %>%
+    ggplot(aes(x = clust, fill = samp)) +
+        geom_bar(position = "fill", width = 1) +
+        ggtitle("Cluster contribution") +
+        theme_void() +
+        theme(axis.text.x = element_blank(),
+              axis.ticks.x = element_blank(),
+              legend.position = "bottom")
+process_time <- stop_the_clock("clust_contrib")
+```
+
+
+
+<!-- ## Grouping clusters -->
+
+<!-- ```{r calc-phylo, fig.width = 3, fig.height = 8} -->
+<!-- start_time <- Sys.time() -->
+<!-- if (integration == "cca") { -->
+<!--     assay_use <- "integrated" -->
+<!-- } else if (normalization == "SCT") { -->
+<!--     assay_use <- "SCT" -->
+<!-- } else { -->
+<!--     assay_use <- "RNA" -->
+<!-- } -->
+
+<!-- integrated <- BuildClusterTree(integrated, dims = 1:curr_pc, reduction = set_reduction, assay = assay_use) -->
+<!-- plot.phylo(integrated@tools$BuildClusterTree, cex = .5, no.margin = TRUE) -->
+<!-- process_time <- stop_the_clock("calc_phylo") -->
+<!-- ``` -->
+
+
+
+<!-- ```{r collapse-clusters, warning = FALSE, message = FALSE} -->
+<!-- start_time <- Sys.time() -->
+<!-- # if (parallelize) { -->
+<!-- #     plan(futures_plan, workers = futures_n_cores) -->
+<!-- #     options(future.globals.maxSize = futures_ram * 1024 * 1024^2) -->
+<!-- # } -->
+
+
+<!-- ### I haven't cleaned up this code much at all ... -->
+<!-- ### but added some parameterization and options to the FindMarkers function. -->
+
+<!-- ### note: this approach assumes that the cluster numbers start at 0 (and not 1) -->
+
+<!-- phylo_table <- as_tibble(integrated@tools$BuildClusterTree$edge) %>% -->
+<!--                   mutate(lengths = integrated@tools$BuildClusterTree$edge.length, -->
+<!--                          Cluster = V2 - 1 -->
+<!--                          ) -->
+<!-- integrated$merged_clusters <- Idents(integrated) -->
+
+
+<!-- nclust_orig <- length(levels(integrated)) -->
+<!-- full <- FALSE -->
+<!-- clear <- c() -->
+<!-- round <- 1 -->
+
+<!-- while (full == FALSE) { -->
+<!--     cat(" == == == == == Round", round, " == == == == == \n") -->
+<!--     full <- TRUE -->
+<!--     i <- 1 -->
+
+<!--     while (i < nrow(phylo_table)) { -->
+<!--         if (phylo_table[i, ]$V2 <= nclust_orig && -->
+<!--            phylo_table[i + 1, ]$V2 <= nclust_orig && -->
+<!--            phylo_table[i, ]$V1 == phylo_table[i + 1, ]$V1 && -->
+<!--            !phylo_table[i, ]$Cluster %in% clear) { -->
+
+
+<!--             ident_1_size <- length(WhichCells(object = integrated, idents = phylo_table[i, ]$Cluster)) -->
+<!--             ident_2_size <- length(WhichCells(object = integrated, idents = phylo_table[i + 1, ]$Cluster)) -->
+
+<!--             if (ident_1_size > min_cluster_size && -->
+<!--                 ident_2_size > min_cluster_size) { -->
+<!--                 #cat("Testing clusters", phylo_table[i, ]$Cluster, "and", phylo_table[i+1, ]$Cluster, "...\n") -->
+<!--                 markers_i <- FindMarkers(object = integrated, -->
+<!--                                         ident.1 = phylo_table[i, ]$Cluster, -->
+<!--                                         ident.2 = phylo_table[i + 1, ]$Cluster, -->
+<!--                                         test.use = test_use, -->
+<!--                                         vars.to.regress = vars_to_regress, -->
+<!--                                         assay = "RNA", -->
+<!--                                         min.pct = min_pct) -->
+<!--                 # add check for logFC vs log2FC -->
+<!--                 n_sig <- markers_i %>% -->
+<!--                             rownames_to_column("Gene") %>% -->
+<!--                             dplyr::filter(abs(avg_log2FC) >= avg_logFC_thres, -->
+<!--                                         p_val_adj < p_val_adj_thres, -->
+<!--                                         !grepl("(lncRNA|tRNA|^mt:|rRNA)", Gene) -->
+<!--                                         ) %>% -->
+<!--                             dplyr::summarise(n()) %>% -->
+<!--                             pull() -->
+<!--             } else { -->
+<!--                 n_sig <- 0 -->
+<!--             } -->
+
+<!--             if (n_sig < lim_n_sig) { -->
+<!--                 #cat("Only", n_sig, "good markers, the clusters are merged.\n\n") -->
+<!--                 min_clus <- min(c(phylo_table[i, ]$Cluster, phylo_table[i + 1, ]$Cluster)) -->
+<!--                 other_clus <- max(c(phylo_table[i, ]$Cluster, phylo_table[i + 1, ]$Cluster)) -->
+<!--                 integrated$merged_clusters[integrated$merged_clusters == other_clus] <- min_clus -->
+<!--                 phylo_table[i - 1, ] <- list(phylo_table[i - 1, ]$V1, min_clus + 1, sum(phylo_table[c(i, i - 1), ]$lengths), min_clus) -->
+<!--                 phylo_table <- phylo_table[-c(i, i + 1), ] -->
+<!--                 full <- FALSE -->
+<!--                 i <- i - 1 -->
+<!--             } else { -->
+<!--                 #cat("These clusters are well supported with", n_sig, "markers.\n\n") -->
+<!--                 clear <- c(clear, phylo_table[i, ]$Cluster, phylo_table[i + 1, ]$Cluster) -->
+<!--             } -->
+<!--         } -->
+<!--         i <- i + 1 -->
+<!--     } -->
+<!--     round <- round + 1 -->
+<!-- } -->
+
+
+<!-- # Save info in Seurat object. The tree file is not in a format that can be printed, but it could be edited if necessary. -->
+<!-- integrated@tools$phylo_table <- phylo_table -->
+
+
+
+<!-- # if (parallelize) { -->
+<!-- #     plan("sequential") -->
+<!-- # } -->
+<!-- process_time <- stop_the_clock("collapse_clusters") -->
+<!-- ``` -->
+
+<!-- ## Show merged clusters -->
+
+<!-- ```{r merged-clusters, fig.height = 8, fig.width = 8} -->
+<!-- start_time <- Sys.time() -->
+<!-- integrated@meta.data[, c("seurat_clusters", "merged_clusters")] %>% -->
+<!--     mutate(seurat_clusters = fct_relevel(seurat_clusters, as.character(sort(as.numeric(unique(.$seurat_clusters))))), -->
+<!--            merged_clusters = fct_relevel(merged_clusters, as.character(sort(as.numeric(unique(.$merged_clusters))))) -->
+<!--         ) %>% -->
+<!--     ggplot(aes(x = merged_clusters, y = seurat_clusters)) + -->
+<!--         geom_point(shape = 4) + -->
+<!--         labs(x = "Merged clusters", y = "Original clusters") + -->
+<!--         theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5), -->
+<!--               axis.text = element_text(size = 7)) -->
+<!-- process_time <- stop_the_clock("merged_clusters") -->
+<!-- ``` -->
+
+<!-- ## Assign new cluster identity and plot -->
+
+<!-- ```{r plot-merged, fig.asp = .5} -->
+<!-- start_time <- Sys.time() -->
+<!-- Idents(integrated) <- integrated$seurat_clusters -->
+<!-- p1 <- DimPlot(integrated, reduction = paste0("umap_", curr_pc, "pcs"), label = TRUE, pt.size = min(4, pt_size), raster = FALSE) + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         ggtitle("Original clusters") + -->
+<!--         theme(plot.title = element_text(size = 10, hjust = .5)) -->
+<!-- Idents(integrated) <- integrated$merged_clusters -->
+<!-- p2 <- DimPlot(integrated, reduction = paste0("umap_", curr_pc, "pcs"), label = TRUE, pt.size = min(4, pt_size), raster = FALSE) + -->
+<!--         NoLegend() + -->
+<!--         NoAxes() + -->
+<!--         ggtitle("Merged clusters") + -->
+<!--         theme(plot.title = element_text(size = 10, hjust = .5)) -->
+<!-- plot_grid(p1, p2, ncol = 2, labels = "AUTO") -->
+<!-- process_time <- stop_the_clock("plot_merged") -->
+<!-- ``` -->
+
+
+<!-- ```{r clust-contrib-merged, fig.width = 12, fig.height = 6} -->
+<!-- start_time <- Sys.time() -->
+<!-- tibble(clust = integrated@active.ident, -->
+<!--            samp = integrated$experiment) %>% -->
+<!--     ggplot(aes(x = clust, fill = samp)) + -->
+<!--         geom_bar(position = "fill", width = 1) + -->
+<!--         ggtitle("Cluster contribution") + -->
+<!--         theme_void() + -->
+<!--         theme(axis.text.x = element_blank(), -->
+<!--               axis.ticks.x = element_blank(), -->
+<!--               legend.position = "bottom") -->
+<!-- process_time <- stop_the_clock("clust_contrib_merged") -->
+<!-- ``` -->
+
+<!-- ## Find Cluster markers -->
+
+<!-- ```{r find-markers} -->
+<!-- # start_time <- Sys.time() -->
+<!-- # if (parallelize) { -->
+<!-- #     plan(futures_plan, workers = futures_n_cores) -->
+<!-- #     options(future.globals.maxSize = futures_ram * 1024 * 1024^2) -->
+<!-- # } -->
+<!-- #  -->
+<!-- # all_markers <- FindAllMarkers(object = integrated, -->
+<!-- #                               logfc.threshold = avg_logFC_thres, -->
+<!-- #                               test.use = test_use, -->
+<!-- #                               min.pct = min_pct, -->
+<!-- #                               only.pos = only_pos, -->
+<!-- #                               latent.vars = vars_to_regress, -->
+<!-- #                               verbose = TRUE -->
+<!-- #                             ) -->
+<!-- #  -->
+<!-- # if (parallelize) { -->
+<!-- #   plan("sequential") -->
+<!-- # } -->
+<!-- # process_time <- stop_the_clock("find_markers") -->
+<!-- ``` -->
+
+
+<!-- ## Cluster-wise correlation -->
+
+<!-- ```{r calc-avg-exp, warning = FALSE, message = FALSE, eval = TRUE} -->
+<!-- start_time <- Sys.time() -->
+<!-- all_avgexp_byclust <- tibble() -->
+<!-- for (ii in unique(integrated$experiment)) { -->
+<!--     temp <- subset(x = integrated, subset = experiment == ii) -->
+<!--     temp_avgexp_byclust <- AverageExpression(object = temp, use.raw = TRUE, assays = "RNA", show.progress = FALSE, verbose = FALSE) -->
+<!--     temp_avgexp_byclust <- as.data.frame(temp_avgexp_byclust[["RNA"]]) %>% -->
+<!--         rownames_to_column("gene") %>% -->
+<!--         gather("cluster", "expression", -gene) %>% -->
+<!--         add_column(replicate = ii) -->
+<!--     all_avgexp_byclust <- bind_rows(all_avgexp_byclust, temp_avgexp_byclust) -->
+<!-- } -->
+<!-- rm(temp, temp_avgexp_byclust) -->
+<!-- invisible(gc()) -->
+<!-- process_time <- stop_the_clock("calc_avg_exp") -->
+<!-- ``` -->
+
+<!-- ```{r cor-by-clust, warning = FALSE, message = FALSE, eval = TRUE} -->
+<!-- start_time <- Sys.time() -->
+<!-- mydata <- tibble(comparison = character(), -->
+<!--                  r = numeric(), -->
+<!--                  cluster = character()) -->
+<!-- for (clust_num in unique(all_avgexp_byclust$cluster)) { -->
+<!--     sub_data <- all_avgexp_byclust %>% -->
+<!--         filter(cluster == clust_num) %>% -->
+<!--         spread(replicate, expression) %>% -->
+<!--         column_to_rownames("gene") %>% -->
+<!--         select(-cluster) %>% -->
+<!--         correlate() %>% -->
+<!--         shave() %>% -->
+<!--         stretch() %>% -->
+<!--         unite(col = "comparison", x:y, sep = ":") %>% -->
+<!--         drop_na() %>% -->
+<!--         add_column(cluster = clust_num) -->
+<!--     mydata <- bind_rows(mydata, sub_data) -->
+<!-- } -->
+<!-- mydata$cluster <- as.numeric(mydata$cluster) -->
+<!-- mydata <- mydata %>% -->
+<!--     spread(comparison, r) %>% -->
+<!--     column_to_rownames("cluster") #%>% -->
+<!--     #t()                                       ## if you want the heatmap to "comparisons x cluster", instead of "cluster x comparisons" -->
+<!-- rm(sub_data, all_avgexp_byclust) -->
+<!-- invisible(gc()) -->
+<!-- process_time <- stop_the_clock("cor_by_clust") -->
+<!-- ``` -->
+
+<!-- ```{r set_fig_params} -->
+<!-- fig_width <- 5*length(unique(integrated$experiment))-16 -->
+<!-- fig_height <- ceiling(length(unique(integrated@active.ident))/3) -->
+<!-- ``` -->
+
+<!-- cor_heatmap, fig.width = fig_width, fig.height = fig_height, eval = TRUE -->
+
+<!-- ```{r cor-heatmap, eval = TRUE} -->
+<!-- start_time <- Sys.time() -->
+<!-- pheatmap(mydata, -->
+<!--          color = rev(sequential_hcl(40, "Inferno")), -->
+<!--          breaks = seq(0, 1, 0.025), -->
+<!--          # breaks = seq(-1,1,0.05), -->
+<!--          # color = diverging_hcl(40, "Blue-Red 3"), -->
+<!--          border_color = NA, -->
+<!--          cluster_rows = FALSE, -->
+<!--          cluster_cols = FALSE, -->
+<!--          #fontsize = 16, -->
+<!--          angle_col = 90) -->
+<!-- process_time <- stop_the_clock("cor_heatmap") -->
+<!-- ``` -->
+
+
+## Filter QC on UMAP
+
+
+```{r qc-cluster, fig.height = 12, fig.width = 10}
+start_time <- Sys.time()
+p_list <- list()
+for (i in seq_along(qc_params_plot)) {
+    p_list[[i]] <- FeaturePlot(object = integrated,
+            features = qc_params_plot[[i]],
+            max.cutoff = qc_params_plot_thesh[[i]],
+            reduction = paste0("umap_", curr_pc, "pcs"),
+            cols = c("lightsteelblue2", "black"),
+            raster = FALSE) +
+    NoAxes() +
+    coord_fixed()
+}
+plot_grid(plotlist = p_list, ncol = 2)
+process_time <- stop_the_clock("qc_cluster")
+```
+
+
+
+## Number of cells per cluster
+
+```{r cells-per-cluster, fig.height = 4, fig.width = 10}
+start_time <- Sys.time()
+as.data.frame(table(Idents(integrated))) %>%
+  as_tibble() %>%
+  left_join(tibble(nUMI = integrated$nCount_RNA, cluster = Idents(integrated)) %>%
+  dplyr::group_by(cluster) %>%
+  dplyr::summarize(mean(nUMI)), by = c("Var1" = "cluster")) %>%
+  arrange(Freq) %>%
+  mutate(Var1 = factor(Var1, levels = Var1)) %>%
+  ggplot(aes(x = Var1, y = Freq, color = `mean(nUMI)`, fill  = `mean(nUMI)`)) +
+    geom_col(width = 0.4, size = 2) +
+    # scale_y_log10() +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+    labs(x = "Clusters", y = "Number of cells")
+process_time <- stop_the_clock("cells_per_cluster")
+```
+
+## Male cells
+
+```{r roX1-expression, fig.asp = 1}
+start_time <- Sys.time()
+if (normalization == "SCT") {
+    default_assay <- "SCT"
+} else {
+    default_assay <- "RNA"
+}
+DefaultAssay(object = integrated) <- default_assay
+temp_split <- SplitObject(object = integrated, split.by = "experiment")
+for (i in seq_along(temp_split)) {
+    print(FeaturePlot(object = temp_split[[i]],
+                    features = "lncRNA:roX1",
+                    order = TRUE,
+                    reduction = paste0("umap_", curr_pc, "pcs"),
+                    cols = c("lightsteelblue2", "black"),
+                    raster = FALSE) +
+              ggtitle(unique(temp_split[[i]]$experiment)) +
+        coord_fixed()
+        )
+}
+process_time <- stop_the_clock("roX1_expression")
+```
+
+
+
+
+
+## Save clustered data
+
+
+```{r make-dir}
+dir.create(paste0(objects_path, "../markers/"), recursive = TRUE, showWarnings = FALSE)
+```
+
+
+```{r save-end}
+start_time <- Sys.time()
+if (run_number_4c == 1) {
+    write_rds(x = integrated,
+              file = paste0(objects_path,
+                          dataset, "_",
+                          input_type, "_",
+                          normalization, "_",
+                          integration, "_",
+                          "integrated_seurat",
+                          path_modifier,
+                          ".rds")
+              )
+    # write_csv(x = all_markers,
+    #           file = paste0(objects_path,
+    #                       "../markers/",
+    #                       dataset, "_",
+    #                       input_type, "_",
+    #                       normalization, "_",
+    #                       integration, "_",
+    #                       "cluster_markers",
+    #                       path_modifier,
+    #                       ".csv")
+    #           )
+}
+if (run_number_4c == 2) {
+# for each string in "annotation_cell_type" vector, we need to pass the arguement into the script for subclustering
+    write_rds(x = integrated,
+        file = paste0(objects_path,
+                      dataset, "_",
+                      input_type, "_",
+                      normalization, "_",
+                      integration, "_",
+                      "integrated_seurat",
+                      path_modifier, "_",
+                      subcluster_celltype, "_",
+                      "subclusting.rds")
+              )
+    # write_csv(x = all_markers,
+    #         file = paste0(objects_path,
+    #                     "../markers/",
+    #                     dataset, "_",
+    #                     input_type, "_",
+    #                     normalization, "_",
+    #                     integration, "_",
+    #                     "cluster_markers",
+    #                     path_modifier,
+    #                     subcluster_celltype, "_",
+    #                     "subclusting.csv")
+    #         )
+}
+process_time <- stop_the_clock("save_end")
+```
+
+
+
+
+
+
+
+# Run time
+
+```{r run-times}
+process_time
+```
+
+```{r plot-run-times, fig.width = 10, fig.height = 5}
+process_time$Code_chunk <- factor(process_time$Code_chunk, levels = rev(process_time$Code_chunk))
+process_time %>%
+    ggplot(aes(x = Code_chunk, y = Run_time, fill = Run_time)) +
+    geom_col(width = 0.8) +
+    xlab("Code Chunk") +
+    ylab("Run Time (mins)") +
+    coord_flip()
+```
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (is.na(job_id)) {
+    job_id <- "interactive"
+}
+if (job_id != "local" && job_id != "interactive") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

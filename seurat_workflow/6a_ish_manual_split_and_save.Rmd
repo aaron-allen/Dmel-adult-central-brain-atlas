@@ -1,0 +1,115 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-03-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Load data
+
+
+
+
+
+
+## Subcluster
+
+
+```{r}
+subcluster_by <- "annotation_broad_cell_type_ext_fix"
+```
+
+```{r}
+meta_cb@meta.data[[subcluster_by]] %>% unique() %>% sort()
+```
+
+
+
+```{r}
+
+
+meta_cb@meta.data[[subcluster_by]] <- meta_cb@meta.data[[subcluster_by]] %>% as.character() %>% replace_na("unknown")
+split_meta_cb <- SplitObject(object = meta_cb, split.by = subcluster_by)
+for (i in seq_along(split_meta_cb)) {
+
+	message(paste0(names(split_meta_cb)[[i]], ":"))
+    
+	message(paste0("\t ... splitting"))
+	subcluster_list <- SplitObject(object = split_meta_cb[[i]], split.by = "orig.ident")
+	
+    message(paste0("\t ... cleaning"))
+	subcluster_list_clean <- list()
+	for (ii in seq_along(subcluster_list)) {
+	    counts_to_use <- "RNA"
+	    subcluster_list_clean[[ii]] <- CreateSeuratObject(counts = subcluster_list[[ii]]@assays[[counts_to_use]], project = names(subcluster_list)[[ii]])
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$orig.ident, col.name = "orig.ident")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$experiment, col.name = "experiment")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$tissue, col.name = "tissue")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$cell_nuclei, col.name = "cell_nuclei")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$availability, col.name = "availability")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$sex, col.name = "sex")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$percent_mt, col.name = "percent_mt")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$percent_rRNA, col.name = "percent_rRNA")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$percent_rProt, col.name = "percent_rProt")
+		subcluster_list_clean[[ii]] <- AddMetaData(object = subcluster_list_clean[[ii]], metadata = subcluster_list[[ii]]$percent_hsp, col.name = "percent_hsp")
+	}
+	names(subcluster_list_clean) <- names(subcluster_list)
+	subcluster_list_clean
+
+
+    message(paste0("\t ... saving"))
+    write_rds(x = subcluster_list, 
+        file = paste0(
+				"../../proj136/analyses/rds_files/", 
+				"New_Meta_cbNeuron_PUBnofacs_noPolIII_v1--1000VarGene--NoReg--Harmony_ori_exp_cell--",  
+				"_alevin_seurat_list_doublets_removed_", 
+				names(split_meta_cb)[[i]], "_", 
+				"subclustering.rds")
+        )
+}
+
+```
+
+
+
+
+
+```{r}
+list.files(path = "../../proj136/analyses/rds_files/", pattern = "New_Meta_cbNeuron_PUBnofacs_noPolIII_v1--1000VarGene--NoReg--Harmony_ori_exp_cell--")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

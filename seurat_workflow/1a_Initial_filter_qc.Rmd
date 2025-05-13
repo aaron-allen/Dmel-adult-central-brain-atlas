@@ -1,0 +1,679 @@
+---
+title: "Initial Filtering and QC of scRNA-Seq data"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+## Parameters
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly = TRUE)[3]
+params_path <- paste0("../src/param_files/", params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+Get the name of the machine that this is running on.  If running on my local desktop ("mentok"), then append to the `raw_path` variable.
+
+```{r is-local}
+local_path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if (curr_machine == "mentok") {
+    local_path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+local_path_mod
+```
+
+```{r adjust-path}
+raw_path <- paste0(local_path_mod, raw_path)
+raw_path
+```
+
+```{r run-number}
+run_number_1a <- commandArgs(trailingOnly = TRUE)[4]
+run_number_1a
+```
+
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(utils)
+library(Seurat)
+library(tidyverse)
+library(cowplot)
+library(colorspace)
+library(ggcorrplot)
+library(ggpubr)
+library(corrr)
+```
+
+
+
+
+```{r run-time-tibble}
+process_time <- tibble()
+stop_the_clock <- function(chunk_name = "unnamed") {
+    temp <- tibble::tibble(Code_chunk = chunk_name,
+                           Start_time = start_time,
+                           Stop_time = Sys.time(),
+                           Run_time = difftime(Stop_time, Start_time, units = "mins")
+                           )
+    process_time <- dplyr::bind_rows(process_time, temp)
+    return(process_time)
+}
+```
+
+
+```{r make-dir}
+dir.create(objects_path, recursive = TRUE, showWarnings = FALSE)
+```
+
+
+
+# The data
+
+## Load data
+
+```{r load-data}
+start_time <- Sys.time()
+
+if (run_number_1a == 1) {
+    if (input_type == "cellranger") {
+        print("Loading Cellranger data")
+        path_modifier <- "/outs/filtered_bc_matrix/"
+    }
+    if (input_type == "alevin") {
+        raw_list <- list()
+        print("Loading Alevin data")
+        path_modifier <- "/alevin/filtered_cellranger_output/"
+        # path_modifier <- "/alevin/raw_cellranger_output/"
+    }
+    raw_list <- list()
+    for (i in raw_names) {
+        print(paste0("  Reading ", i, " 10x data"))
+        raw_list[[i]] <- Read10X(data.dir = paste0(raw_path, i, path_modifier))
+    }
+}
+
+if (run_number_1a == 2) {
+    if (ambient_method == "soupx") {
+        print("Loading SoupX adjusted counts data")
+        raw_list <- read_rds(file = paste0(soupx_output_path,
+                                           dataset, "_",
+                                           input_type, "_",
+                                           "soupx_adj_counts.rds")
+                             )
+    }
+    if (ambient_method == "decontx") {
+        print("Loading DecontX adjusted counts data")
+        raw_list <- read_rds(file = paste0(decontx_output_path,
+                                           dataset, "_",
+                                           input_type, "_",
+                                           "decontx_seurat_list_adj.rds")
+                             )
+    }
+}
+
+
+process_time <- stop_the_clock("load_data")
+```
+
+
+
+## Round the data
+
+```{r round-data}
+start_time <- Sys.time()
+if (round_the_data) {
+    round_to_int <- function(input) {
+        input@x <- floor(input@x) + rbinom(length(input@x), 1, input@x - floor(input@x))
+        return(input)
+    }
+    for (i in seq_along(raw_list)) {
+        raw_list[[i]] <- round_to_int(raw_list[[i]])
+    }
+}
+process_time <- stop_the_clock("round_data")
+```
+
+
+
+## Create Seurat objects
+
+```{r create-seurat}
+start_time <- Sys.time()
+seurat_list <- list()
+for (i in seq_along(raw_list)) {
+    print(paste0("Creating Seurat object of ", sample_names[[i]]))
+    seurat_list[[i]] <- CreateSeuratObject(counts = raw_list[[i]],
+                                           min.cells = min_cells,
+                                           min.features = min_features,
+                                           project = sample_names[[i]])
+    if (run_number_1a == 1) {
+        seurat_list[[i]] <- RenameCells(object = seurat_list[[i]],
+                                        add.cell.id = sample_names[[i]])
+    }
+    seurat_list[[i]]$orig.ident <- sample_names[[i]]
+    names(seurat_list)[[i]] <- sample_names[[i]]
+}
+seurat_list
+process_time <- stop_the_clock("create_seurat")
+```
+
+
+# Initial QC
+
+## Replicate correlation
+
+```{r counts-tibble}
+if (length(seurat_list) > 1) {
+    start_time <- Sys.time()
+    for (i in seq_along(seurat_list)) {
+        temp_counts <- tibble(gene = seurat_list[[i]]@assays[["RNA"]]@counts@Dimnames[[1]],
+                              !!seurat_list[[i]]@project.name := rowSums(as.array(seurat_list[[i]]@assays[["RNA"]]@counts))
+                              )
+        if (i == 1) {
+            raw_counts_df <- temp_counts
+        } else {
+            raw_counts_df <- full_join(raw_counts_df, temp_counts, by = "gene")
+        }
+    }
+    raw_counts_df <- raw_counts_df %>% replace(is.na(.), 0)
+    process_time <- stop_the_clock("counts_tibble")
+}
+```
+
+```{r plot-correlation, fig.height = 6,fig.width = 6, warning = FALSE, message = FALSE}
+if (length(seurat_list) > 1) {
+    start_time <- Sys.time()
+    combos <- combn(seq_len(length(seurat_list)), 2)
+    p <- list()
+    for (i in 1:dim(combos)[2]) {
+        p[[i]] <- raw_counts_df %>%
+              ggplot(aes(x = log1p(!!(as.name(colnames(raw_counts_df)[combos[, i][1] + 1]))),
+                         y = log1p(!!(as.name(colnames(raw_counts_df)[combos[, i][2] + 1]))))) +
+                geom_point() +
+                coord_fixed() +
+                geom_smooth(method = lm) +
+                stat_cor(label.y = 15, size = 5) +
+                stat_regline_equation(label.y = 14, size = 5) +
+                ylim(0, 15) +
+                xlim(0, 15) +
+                theme_gray() +
+                theme(text = element_text(size = 14)) +
+                ggtitle(paste0(colnames(raw_counts_df)[combos[, i][1] + 1],
+                               " vs ",
+                               colnames(raw_counts_df)[combos[, i][2] + 1]
+                               )
+                        ) +
+                theme(plot.title = element_text(face = "bold", hjust = 0.5))
+        plot(p[[i]])
+    }
+    process_time <- stop_the_clock("plot_correlation")
+}
+```
+
+
+## Plot percent feature class
+
+```{r percent-feature}
+start_time <- Sys.time()
+for (i in seq_along(seurat_list)) {
+    seurat_list[[i]][["percent_mt"]] <- PercentageFeatureSet(seurat_list[[i]], pattern = "^mt:")
+    seurat_list[[i]][["percent_rRNA"]] <- PercentageFeatureSet(seurat_list[[i]], pattern = "(S|-)rRNA")
+    seurat_list[[i]][["percent_rProt"]] <- PercentageFeatureSet(seurat_list[[i]], pattern = "Rp(L|S)")
+    seurat_list[[i]][["percent_hsp"]] <- PercentageFeatureSet(seurat_list[[i]], pattern = "^Hsp")
+}
+process_time <- stop_the_clock("percent_feature")
+```
+
+
+```{r feature-plot-function}
+qc_params_plot_function <- function(object_list,  # nolint
+                                    plot_qc_param = "nCount_RNA",
+                                    plot_title = NULL,
+                                    plot_low_thres = 0,
+                                    plot_high_thres = Inf,
+                                    plot_title_mod = NULL) {
+
+    print(paste0("Plotting values for: ", plot_qc_param))
+    qc_data <- list()
+    for (ii in seq_along(object_list)) {
+        qc_data[[ii]] <- Seurat::FetchData(object = object_list[[ii]], vars = c("orig.ident", plot_qc_param)) %>%
+            dplyr::mutate()
+    }
+    p <- qc_data %>%
+            dplyr::bind_rows() %>%
+            dplyr::rename(sample = orig.ident) %>%
+            dplyr::rename(metric = plot_qc_param) %>%
+            ggplot2::ggplot(ggplot2::aes(x = sample, y = metric)) +
+                ggplot2::labs(x = "Samples", y = plot_qc_param) +
+                ggplot2::geom_jitter(size = .01, alpha = 0.5, aes(colour = sample)) +
+                ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1), legend.position = "none") +
+                ggplot2::geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+                ggplot2::geom_hline(yintercept = c(plot_low_thres, plot_high_thres), linetype = "dashed") +
+                ggplot2::ggtitle(paste0(plot_title_mod, "  -  ", plot_title)) +
+                ggplot2::theme(plot.title = ggplot2::element_text(face = "bold"))
+    if (plot_qc_param %in% c("nFeature_RNA", "nCount_RNA")) {
+        p <- p +
+            ggplot2::scale_y_continuous(trans = "log10") +
+            ggplot2::annotation_logticks(sides = "l")
+    }
+    print(p)
+
+}
+```
+
+
+
+```{r percent-feature-plot-raw}
+start_time <- Sys.time()
+options(scipen = 9999)
+low_thres <- list(min_genes, min_umi, 0, 0, 0, 0)
+high_thres <- list(max_genes, max_umi, max_mito, max_hsp, max_rprot, max_rrna)
+titles <- list("Number of features",
+                 "Number of UMIs",
+                 "Percentage of mitochondrial RNA",
+                  "Percentage of heat-shock protein mRNA",
+                 "Percentage of ribosomal proteins",
+                 "Percentage of ribosomal RNA"
+                 )
+
+for (i in seq_along(qc_params_plot)) {
+    qc_params_plot_function(seurat_list,
+                            plot_qc_param = qc_params_plot[[i]],
+                            plot_title = titles[[i]],
+                            plot_low_thres = low_thres[[i]],
+                            plot_high_thres = high_thres[[i]],
+                            plot_title_mod = "Raw data"
+                            )
+}
+process_time <- stop_the_clock("percent_feature_plot_raw")
+```
+
+
+
+
+
+
+## Remove PolIII features
+
+10x Chromium v3 seems to get a lot of PolIII features, which are not useful for downstream analysis. We will remove these features from the Seurat object.
+
+```{r remove-poliii}
+if (remove_poliii_genes) {
+    start_time <- Sys.time()
+
+    raw_list_backup <- raw_list
+    seurat_list_backup <- seurat_list
+    seurat_list <- list()
+
+    for (i in seq_along(raw_list)) {
+        print(paste0("Processing   ", sample_names[[i]], "  ..."))
+
+        print("    Removing rRNA and tRNA genes  ...")
+        r_rna_genes <- rownames(raw_list[[i]]) %>% str_subset(pattern = "rRNA")
+        t_rna_genes <- rownames(raw_list[[i]]) %>% str_subset(pattern = "tRNA:")
+        raw_list[[i]] <- raw_list[[i]][-(which(rownames(raw_list[[i]]) %in% c(r_rna_genes, t_rna_genes))),]
+
+        print("    Creating Seurat object ...")
+        seurat_list[[i]] <- CreateSeuratObject(counts = raw_list[[i]],
+                                            min.cells = min_cells,
+                                            min.features = min_features,
+                                            project = sample_names[[i]])
+        if (run_number_1a == 1) {
+            seurat_list[[i]] <- RenameCells(object = seurat_list[[i]],
+                                            add.cell.id = sample_names[[i]])
+        }
+        seurat_list[[i]]$orig.ident <- sample_names[[i]]
+        names(seurat_list)[[i]] <- sample_names[[i]]
+
+        print("    Adding metadata  ...")
+        seurat_list[[i]][["percent_mt"]] <- PercentageFeatureSet(seurat_list[[i]], pattern = "^mt:")
+        seurat_list[[i]][["percent_rRNA"]] <- PercentageFeatureSet(seurat_list[[i]], pattern = "(S|-)rRNA")
+        seurat_list[[i]][["percent_rProt"]] <- PercentageFeatureSet(seurat_list[[i]], pattern = "Rp(L|S)")
+        seurat_list[[i]][["percent_hsp"]] <- PercentageFeatureSet(seurat_list[[i]], pattern = "^Hsp")
+
+    }
+    seurat_list
+    process_time <- stop_the_clock("remove_poliii")
+}
+```
+
+
+
+### Re-Plot percent feature class - no PolIII genes
+
+```{r percent-feature-plot-poliii}
+if (remove_poliii_genes) {
+    start_time <- Sys.time()
+    for (i in seq_along(qc_params_plot)) {
+        qc_params_plot_function(seurat_list,
+                                plot_qc_param = qc_params_plot[[i]],
+                                plot_title = titles[[i]],
+                                plot_low_thres = low_thres[[i]],
+                                plot_high_thres = high_thres[[i]],
+                                plot_title_mod = "Removed PolIII genes"
+                                )
+    }
+    process_time <- stop_the_clock("percent_feature_plot_poliii")
+}
+```
+
+
+
+## Trim objects
+
+
+### Removing outlier cells
+
+```{r trim-function}
+trim_data <- function(object) {
+  data_trim <- object %>%
+      subset(subset = nFeature_RNA >= min_genes &
+                 nFeature_RNA <= max_genes &
+                 nCount_RNA >= min_umi &
+                 nCount_RNA <= max_umi &
+                 percent_mt < max_mito &
+                 percent_rRNA < max_rrna &
+                 percent_rProt <= max_rprot &
+                 percent_hsp <= max_hsp)
+  removed <- dim(object)[2] - dim(data_trim)[2]
+  perc_removed <- removed / dim(object)[2] * 100
+  print(paste0("Number of cells removed in ",
+                object@project.name, ": ",
+                removed, " (",
+                round(perc_removed, 2), "% of ",
+                dim(object)[2], ")"))
+  return(data_trim)
+}
+```
+
+```{r trim-object}
+start_time <- Sys.time()
+seurat_list_trim <- list()
+for (i in seq_along(seurat_list)) {
+    seurat_list_trim[[i]] <- seurat_list[[i]] %>% trim_data
+    seurat_list_trim[[i]]$orig.ident <- sample_names[[i]]
+    names(seurat_list_trim)[[i]] <- sample_names[[i]]
+}
+seurat_list_trim
+process_time <- stop_the_clock("trim_object")
+```
+
+
+### Remove Small Reps
+
+If the number of cells is less than `min_tot_cells`, then the replicate will be removed from later analyses.
+
+```{r remove-small-reps}
+objs_to_remove <- c()
+for (i in seq_along(seurat_list_trim)) {
+    num_cells <- dim(seurat_list_trim[[i]])[2]
+    if (num_cells < min_tot_cells) {
+        message(paste0("Sample ", names(seurat_list_trim)[[i]], " has ", num_cells, " cells, and will be removed."))
+        objs_to_remove <- c(objs_to_remove, names(seurat_list_trim)[[i]])
+    }
+}
+for (i in seq_along(objs_to_remove)) {
+    seurat_list_trim[[objs_to_remove[[i]]]] <- NULL
+}
+seurat_list_trim
+```
+
+
+### Re-Plot percent feature class - trimmed
+
+```{r percent-feature-plot-trim}
+start_time <- Sys.time()
+for (i in seq_along(qc_params_plot)) {
+    qc_params_plot_function(seurat_list_trim,
+                            plot_qc_param = qc_params_plot[[i]],
+                            plot_title = titles[[i]],
+                            plot_low_thres = low_thres[[i]],
+                            plot_high_thres = high_thres[[i]],
+                            plot_title_mod = "Trimmed data"
+                            )
+}
+process_time <- stop_the_clock("percent_feature_plot_trim")
+```
+
+
+
+## Add Tissue Metadata
+
+```{r tissue-meta-data}
+if (multi_tissue) {
+    for (i in seq_along(seurat_list_trim)) {
+        tissue_table <- seurat_list_trim[[i]]@meta.data %>%
+            select(orig.ident) %>%
+            rownames_to_column("cell_id") %>%
+            mutate(tissue = str_extract(string = orig.ident, pattern = "[^_]+"))
+        seurat_list_trim[[i]] <- AddMetaData(object = seurat_list_trim[[i]],
+            metadata = tissue_table$tissue,
+            col.name = "tissue")
+    }
+}
+```
+
+## Add Sex Metadata
+
+```{r sex-meta-data}
+if (insilico_sex) {
+    for (i in seq_along(seurat_list_trim)) {
+        seurat_list_trim[[i]] <- NormalizeData(object = seurat_list_trim[[i]])
+        seurat_list_trim[[i]] <- AddModuleScore(object = seurat_list_trim[[i]],
+            features = list(c("lncRNA:roX1", "lncRNA:roX2")),
+            name = "modulescore_sex")
+        sex_table <- seurat_list_trim[[i]]@meta.data %>%
+            rownames_to_column("cell_id") %>%
+            select(cell_id, modulescore_sex1) %>%
+            mutate(sex = "unknown") %>%
+            mutate(sex = if_else(modulescore_sex1 < 0, "female", "male"))
+        seurat_list_trim[[i]] <- AddMetaData(object = seurat_list_trim[[i]],
+            metadata = sex_table$sex,
+            col.name = "sex")
+        p1 <- data.frame(ModuleScore = seurat_list_trim[[i]]@meta.data[["modulescore_sex1"]]) %>%
+            ggplot(aes(x = ModuleScore)) +
+                geom_histogram(aes(y = 100 * ..count.. / sum(..count..)),
+                             fill = "lightsteelblue2",
+                             position = "stack",
+                             bins = 60,
+                             show.legend = FALSE) +
+                geom_vline(xintercept = -0.4) +
+                ylab("Percent") +
+                theme(plot.margin = unit(c(30, 30, 30, 30), "pt")) +
+                ggtitle(names(seurat_list_trim)[[i]])
+        plot(p1)
+    }
+}
+if (sample_sex) {
+    for (i in seq_along(seurat_list_trim)) {
+        sex_table <- seurat_list_trim[[i]]@meta.data %>%
+            select(orig.ident) %>%
+            rownames_to_column("cell_id") %>%
+            mutate(sex = if_else(grepl("fem", orig.ident), "female", "male"))
+        seurat_list_trim[[i]] <- AddMetaData(object = seurat_list_trim[[i]],
+            metadata = sex_table$sex,
+            col.name = "sex")
+    }
+}
+```
+
+
+
+
+
+
+
+## Save trimmed Seurat objects
+
+```{r save-trimmed}
+start_time <- Sys.time()
+if (run_number_1a == 1) {
+    write_rds(x = seurat_list,
+           file = paste0(objects_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "seurat_list.rds"))
+    write_rds(x = seurat_list_trim,
+           file = paste0(objects_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "trimmed_seurat_list.rds")
+            )
+}
+if (run_number_1a == 2) {
+    write_rds(x = seurat_list,
+           file = paste0(objects_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "doublets_removed_ambient_removed_seurat_list.rds"))
+    write_rds(x = seurat_list_trim,
+           file = paste0(objects_path,
+                         dataset, "_",
+                         input_type, "_",
+                         "doublets_removed_ambient_removed_trimmed_seurat_list.rds")
+            )
+}
+process_time <- stop_the_clock("save_trimmed")
+```
+
+
+
+
+
+
+
+# Run time
+
+```{r run-times}
+process_time
+```
+
+```{r plot-run-times, fig.width = 10, fig.height = 5}
+process_time$Code_chunk <- factor(process_time$Code_chunk, levels = rev(process_time$Code_chunk))
+process_time %>%
+    ggplot(aes(x = Code_chunk, y = Run_time, fill = Run_time)) +
+    geom_col(width = 0.8) +
+    xlab("Code Chunk") +
+    ylab("Run Time (mins)") +
+    coord_flip()
+```
+
+
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (job_id != "local") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```
