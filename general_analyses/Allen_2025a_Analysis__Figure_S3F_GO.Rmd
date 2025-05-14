@@ -1,0 +1,651 @@
+---
+title: "Allen_2025a_Analysis__Figure_S3_GO"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 100,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(colorspace)
+library(cowplot)
+```
+
+
+
+# Functions
+
+
+## plot_marker_GO_analysis
+
+```{r}
+plot_marker_GO_analysis <- function(
+        de_df = NULL,                        # data frame of differential expression
+        pval_thres = 0.05,                   # threshold cutoff of adjusted p-value
+        log_fc_thres = 0.5,                  # threshold cutoff for log fold change
+        # log_fc_negative = FALSE,             # TRUE for negative logFC gene, ie male-biased
+        # genes_to_keep = NULL,                # specified vector of genes to remove
+        # fg_genes = NULL,                    # vector of differentially expressed genes
+        bg_genes = NULL,                     # vector of background genes
+        use_bg_genes = FALSE,                # whether to use background genes or not
+        ontology_catagory = "BP",            # one of "BP", "MF", "CC"
+        org_db = "org.Dm.eg.db",             # drosophila melanogaster
+        key_type = "SYMBOL"                  # using gene symbol for now
+    ){
+
+    library(clusterProfiler)
+    library(org.Dm.eg.db)
+    library(AnnotationDbi)
+
+    sig_symbol <- de_df %>%
+        dplyr::filter(p_val_adj < pval_thres) %>%
+        dplyr::filter(avg_log2FC > log_fc_thres) %>%
+    	dplyr::select(Gene) %>%
+    	unique()
+    # sig_symbol
+
+    go_results_bp_deg <- clusterProfiler::enrichGO(gene = sig_symbol$Gene, OrgDb = org_db, universe = bg_genes, keyType = key_type, ont = ontology_catagory)
+    go_results_bp_deg_df <- as.data.frame(go_results_bp_deg) %>% dplyr::arrange(qvalue)
+    p1 <- dotplot(go_results_bp_deg, orderBy = "x", showCategory = 20) +
+        labs(
+            title = paste0("Cell Type Markers", " -- ", ontology_catagory),
+            subtitle = paste0(
+                "FC cutoff = ", log_fc_thres,
+                "; p-value cutoff = ", pval_thres
+            ),
+            caption = paste0(
+                "Use bg gene = ", use_bg_genes
+            )
+        )
+
+    # return(go_results_bp_deg)
+    print(go_results_bp_deg_df)
+    plot(p1)
+
+}
+```
+
+
+
+
+
+
+
+# Load data
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+meta_cb
+```
+
+
+
+```{r fig.width=20, fig.height=20}
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.4,
+		label = FALSE, 
+		raster = FALSE, 
+		raster.dpi = c(2048,2048)
+	) +
+	coord_fixed() +
+	scale_colour_discrete_qualitative(palette = "Set 2") +
+	theme_classic() +
+	theme(
+		axis.title = element_blank(),
+		axis.text = element_blank(),
+		axis.ticks = element_blank()
+	) +
+	NoLegend() +
+	labs(
+		title = "All Cell Types"#, 
+		# subtitle = , 
+		# caption = 
+	)
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+```
+
+
+
+
+
+
+# Markers
+
+```{r}
+options(scipen = 1)
+marker_meta_cb <- read_csv("../analyses/markers/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_subcluster_clusters_RNA_cluster_markers_doublets_removed.csv") %>% 
+    dplyr::rename("Gene" = "gene")
+marker_meta_cb
+```
+
+
+
+
+
+
+
+
+
+
+
+# Gene Filtering
+
+
+
+## iso and trans genes
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4"
+)
+```
+
+
+
+## dataset specific genes
+
+
+### load pre-calc. counts
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent <- read_csv(file = "../../proj136/analyses/all_gene_max_sum__by_exp_wPercent.csv")
+# head(all_gene_max_sum__by_exp_together_wPercent)
+
+all_gene_max_sum <- read_csv(file = "../../proj136/analyses/all_gene_max_sum.csv")
+# head(all_gene_max_sum)
+```
+
+
+
+### filter candidates
+
+```{r}
+genes_adfca_gt_30p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(Dataset == "adfca") %>%
+    dplyr::filter(percent_dataset > 30) %>%
+    pull(RowName)
+# length(genes_adfca_gt_30p)
+
+genes_any_gt_60p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(percent_dataset > 60) %>% 
+    pull(RowName) %>% 
+    unique()
+# length(genes_any_gt_60p)
+
+
+genes_low_exp <- all_gene_max_sum %>%
+    dplyr::filter(RowSum < 400) %>% 
+    dplyr::filter(RowMax < 4) %>% 
+    pull(RowName) %>% 
+    unique()
+# length(genes_low_exp)
+
+genes_remove <- sort(unique(c(genes_adfca_gt_30p, genes_any_gt_60p, genes_low_exp)))
+# length(genes_remove)
+
+genes_sexed_dataset <- all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    pull(RowName)
+# length(genes_sexed_dataset)
+```
+
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    dplyr::filter(sexed_dataset_counts > 45)%>% 
+    pull(RowName) %>% 
+	length()
+```
+
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent %>% 
+    # dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    # dplyr::filter(sexed_dataset_counts > 45)%>% 
+    pull(RowName) %>% 
+	length()
+```
+
+
+
+## filter deg list
+
+```{r}
+marker_meta_cb_filtered <- marker_meta_cb %>%
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset)
+marker_meta_cb_filtered
+```
+69,345 rows
+
+```{r}
+marker_meta_cb_filtered %>% 
+	dplyr::filter(p_val_adj < 0.05) %>% 
+	dplyr::filter(avg_log2FC > 0.5) %>% 
+    dplyr::pull(Gene) %>%
+    unique() %>% 
+	length()
+```
+
+
+
+
+
+
+# GO
+
+
+
+```{r}
+# write_csv(x = data.frame(gene = result), file = "../../proj136/analyses/all_expressed_genes.csv")
+all_detected_genes <- read_csv(file = "../../proj136/analyses/all_expressed_genes.csv")
+all_detected_genes
+```
+
+
+
+```{r}
+expressed_genes <- data.frame(Gene = rownames(meta_cb)) %>% 
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset) %>%
+    dplyr::filter(Gene %in% all_detected_genes$gene) #%>% 
+    # dplyr::rename("gene" = "Gene")
+expressed_genes
+```
+
+
+
+
+```{r}
+marker_meta_cb_filtered %>% 
+    filter(p_val_adj < 0.01) %>%
+    filter((avg_log2FC) > 1) %>% 
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset) %>% 
+    pull(Gene) %>% 
+    unique() %>% 
+    sort() %>% 
+    cat(sep = " ")
+```
+
+
+
+
+
+```{r}
+library(clusterProfiler)
+library(org.Dm.eg.db)
+library(AnnotationDbi)
+```
+
+
+
+
+## Bg correction
+
+```{r}
+curr_use_bg_genes = TRUE
+```
+
+
+### stringent
+
+
+```{r}
+curr_pval_thres = 0.01 
+curr_log_fc_thres = 1
+```
+
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$ene, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+
+
+
+### relaxed
+
+```{r}
+curr_pval_thres = 0.05 
+curr_log_fc_thres = 0.5
+```
+
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "MF"
+)
+```
+
+
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+## no Bg correction
+
+```{r}
+curr_use_bg_genes = FALSE
+```
+
+
+
+### stringent
+
+
+```{r}
+curr_pval_thres = 0.01 
+curr_log_fc_thres = 1
+```
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+
+
+### relaxed
+
+```{r}
+curr_pval_thres = 0.05 
+curr_log_fc_thres = 0.5
+```
+
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+plot_marker_GO_analysis(
+    de_df = marker_meta_cb_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$Gene, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

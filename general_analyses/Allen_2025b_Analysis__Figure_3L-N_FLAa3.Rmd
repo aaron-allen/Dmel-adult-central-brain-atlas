@@ -1,0 +1,761 @@
+---
+title: "Sexed_Paper_2_Plots__Figure_3_FLAa3_subclustering"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(colorspace)
+library(tidyverse)
+
+# library(RColorBrewer)
+# library(ComplexHeatmap)
+
+
+```
+
+
+
+# Load data
+
+```{r}
+# write_rds(x = FLAa3_seu, file = "../../proj136/analyses/rds_files/subclustering_FLAa3_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+FLAa3_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_FLAa3_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+FLAa3_seu
+```
+
+
+
+# Plots
+
+
+
+## FLAa3 in meta cb
+
+
+<!-- ```{r} -->
+<!-- Idents(meta_cb_old) <- "subcluster_clusters" -->
+<!-- cells_highlight <- WhichCells(object = meta_cb_old, idents = "Achl_067") -->
+<!-- length(cells_highlight) -->
+<!-- ``` -->
+
+
+
+```{r fig.width=14, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_cb_old,
+        # object = meta_cb,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.4,
+        cols.highlight = "black",
+        cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        # split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+        ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1$layers[[1]]$aes_params$alpha = 0.4
+p1$layers[[1]]$aes_params$size = 4
+plot(p1 +
+    xlim(60, 90) +
+    ylim(-45, -15)
+    # xlim(90, 120) +
+    # ylim(-90, -60)
+)
+```
+
+
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("Ptx1", "dve", "VGlut", "VAChT", "Gad1", "bsh")
+plist <- FeaturePlot(object = meta_cb_old,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$size = 4
+	plist[[i]]$layers[[1]]$aes_params$alpha = 0.4
+	plot(plist[[i]] +
+        xlim(60, 90) +
+        ylim(-45, -15)
+        # xlim(90, 120) +
+        # ylim(-90, -60)
+    )
+}
+
+```
+
+
+
+
+
+
+<!-- ```{r warning=FALSE, message=FALSE, fig.width=20, fig.height=14} -->
+
+
+<!-- p1 <- DimPlot( -->
+<!--         object = fru_seu, -->
+<!--         cells.highlight = cells_highlight, -->
+<!--         sizes.highlight = 2, -->
+<!--         cols.highlight = "black", -->
+<!--         cols = "lightsteelblue2", -->
+<!--         reduction = "tsne_70pcs", -->
+<!--         pt.size = 2, -->
+<!--         raster = FALSE, -->
+<!--         label = FALSE, -->
+<!--         label.box = FALSE, -->
+<!--         repel = TRUE -->
+<!--         ) + -->
+<!--     NoLegend() + -->
+<!--     coord_fixed() -->
+
+<!-- # p1[[1]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- plot(p1) -->
+
+
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+## subclustered
+
+
+
+<!-- ```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12} -->
+
+<!-- reductions_to_plot <- FLAa3_seu@reductions %>% names() %>% str_subset("umap_") -->
+
+<!-- for (i in seq_along(reductions_to_plot)) { -->
+<!--     plot(DimPlot(object = FLAa3_seu, reduction = reductions_to_plot[[i]], group.by = "RNA_snn_res.2", pt.size = 2, label = TRUE) + scale_colour_discrete_qualitative(palette = "Set 2") + coord_fixed()) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+<!-- ```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12} -->
+
+<!-- reductions_to_plot <- FLAa3_seu@reductions %>% names() %>% str_subset("tsne_") -->
+
+<!-- for (i in seq_along(reductions_to_plot)) { -->
+<!--     plot(DimPlot(object = FLAa3_seu, reduction = reductions_to_plot[[i]], group.by = "RNA_snn_res.2", pt.size = 2, label = TRUE) + scale_colour_discrete_qualitative(palette = "Set 2") + coord_fixed()) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=22}
+
+
+DimPlot(object = FLAa3_seu, 
+		group.by = "RNA_snn_res.0.2",
+        reduction = "umap_10pcs", 
+		pt.size = 2,
+        label = TRUE, 
+        label.box = FALSE) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = FLAa3_seu, 
+		group.by = "RNA_snn_res.0.2",
+        reduction = "tsne_15pcs", 
+		pt.size = 3,
+        label = TRUE, 
+        label.box = FALSE) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") + 
+    NoLegend() + 
+    coord_fixed()
+
+
+```
+
+
+
+```{r fig.height=12, fig.width=12}
+
+genes <- c("Ptx1", "dve", "VGlut", "VAChT", "Gad1", "bsh")
+plist <- FeaturePlot(
+			object = FLAa3_seu, 
+			reduction = "tsne_15pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 3, 
+			# min.cutoff = 1,
+			# max.cutoff = 2,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE
+		)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+```{r fig.height=12, fig.width=12}
+
+genes <- c("fru")
+plist <- FeaturePlot(
+			object = FLAa3_seu, 
+			reduction = "tsne_15pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 2, 
+			# min.cutoff = 1,
+			# max.cutoff = 2,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE
+		)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+```{r fig.height=12, fig.width=12}
+
+genes <- c("Imp", "dati", "br", "pdm3")
+plist <- FeaturePlot(
+			object = FLAa3_seu, 
+			reduction = "tsne_15pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 3, 
+			# min.cutoff = 1,
+			# max.cutoff = 2,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE
+		)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+```{r fig.height=12, fig.width=12}
+
+genes <- c("Lgr3", "dve", "VGlut", "dimm")
+plist <- FeaturePlot(
+			object = FLAa3_seu, 
+			reduction = "tsne_15pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 3, 
+			# min.cutoff = 1,
+			# max.cutoff = 2,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE
+		)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+
+genes <- c("Ms", "Capa")
+plist <- FeaturePlot(
+			object = FLAa3_seu, 
+			reduction = "tsne_15pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 3, 
+			min.cutoff = 4,
+			max.cutoff = 8,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE
+		)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+
+```
+
+
+
+
+
+```{r fig.width=4, fig.height=4}
+VlnPlot(object = FLAa3_seu, features = "Lgr3", group.by = "sex", cols = c("#c77cff", "#00bfc4"), pt.size = 0)
+```
+
+
+
+### Volcano Plots
+
+
+
+```{r}
+options(scipen = 1)
+deg_list <- list()
+
+
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+					  "Yp1", "Yp2", "Yp3", "whe",
+					  "Sxl", "ssx", "tra", "tra2", "fru", "dsx",
+                      "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3"
+)
+
+```
+
+
+
+```{r}
+deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_deseq_df_2.csv", col_types = cols())
+```
+
+
+<!-- ```{r} -->
+<!-- deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/subclustering_frudsx__seu--round1_NoBatchSex_DEG_sexed_RNA_snn_res.2_RNA_zinb_deseq_df_1.csv", col_types = cols()) -->
+<!-- # deg_list[["deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_fru_dsx_seuNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_DESeq2_RNA_snn_res.2_RNA_pseudo_bulk_all_genes.csv", col_types = cols()) -->
+<!-- # deg_list[["mast"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_fru_dsx_seuNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_MAST_RNA_snn_res.2_RNA_pseudo_bulk_regvar_all_genes.csv", col_types = cols()) -->
+<!-- # deg_list[["negbinom"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_fru_dsx_seuNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_negbinom_RNA_snn_res.2_RNA_pseudo_bulk_regvar_all_genes.csv", col_types = cols()) -->
+<!-- # deg_list[["wilcox"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_fru_dsx_seuNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_wilcox_RNA_snn_res.2_RNA_pseudo_bulk_all_genes.csv", col_types = cols()) -->
+<!-- ``` -->
+
+```{r}
+names(deg_list)
+```
+
+```{r}
+deg_list[["zinb-deseq"]]
+```
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>% 
+    # filter(!Gene %in% c("lncRNA:roX1", "lncRNA:roX2")) %>% 
+    filter(!Gene %in% iso_genes_remove) %>% 
+    arrange(desc(abs(log2FoldChange)))
+```
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>% 
+    filter(Gene == "Lgr3")
+```
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(Cluster == "Achl_067") %>% 
+    filter(padj < 0.05) %>% 
+    # filter(abs(log2FoldChange) > 1) %>% 
+    arrange(desc(abs(log2FoldChange)))
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+x_lims <- c(2.2)
+y_lims <- c(24)
+
+for (i in seq_along(deg_list)) {
+
+    fc_cutoff <- 1
+    p_cutoff <- 0.01
+    temp_deg <- deg_list[[i]] %>%
+    	filter(Cluster == "Achl_067") %>%
+        filter(!Gene %in% iso_genes_remove)
+
+    if (names(deg_list)[[i]] == "zinb-deseq") {
+        x_data <- "log2FoldChange"
+        y_data <- "padj"
+    } else {
+        x_data <- "avg_log2FC"
+        y_data <- "p_val_adj"
+    }
+
+    p1 <- EnhancedVolcano::EnhancedVolcano(toptable = temp_deg,
+                  lab = temp_deg$Gene,
+                  xlim = c(-x_lims[i], x_lims[i]),
+                  # ylim = c(0, y_lims[i]),
+                  x = x_data,
+                  y = y_data,
+                  pCutoff = p_cutoff,
+                  FCcutoff = fc_cutoff,
+                  # col = c("grey80", "grey50", "grey50", "red2"),
+                  pointSize = 2,
+    			  # labSize = 0,
+                  raster = TRUE,
+                  boxedLabels = FALSE,
+                  drawConnectors = TRUE,
+                  # title = plot_title,
+                  subtitle = paste0("Cluster = ", "10",
+                                    ", test = ", names(deg_list)[[i]]),
+                  caption = paste0("FC cutoff = ", fc_cutoff,
+                                   "; p-value cutoff = ", p_cutoff),
+                  )
+    plot(p1)
+
+
+
+
+}
+
+
+
+```
+
+```{r fig.width=12, fig.height=12}
+
+x_lims <- c(2.2)
+y_lims <- c(24)
+
+for (i in seq_along(deg_list)) {
+
+    fc_cutoff <- 1
+    p_cutoff <- 0.01
+    temp_deg <- deg_list[[i]] %>%
+    	filter(Cluster == "Achl_067") %>%
+        filter(!Gene %in% iso_genes_remove)
+
+    if (names(deg_list)[[i]] == "zinb-deseq") {
+        x_data <- "log2FoldChange"
+        y_data <- "padj"
+    } else {
+        x_data <- "avg_log2FC"
+        y_data <- "p_val_adj"
+    }
+
+    p1 <- EnhancedVolcano::EnhancedVolcano(toptable = temp_deg,
+                  lab = temp_deg$Gene,
+                  xlim = c(-x_lims[i], x_lims[i]),
+                  ylim = c(0, y_lims[i]),
+                  x = x_data,
+                  y = y_data,
+                  pCutoff = p_cutoff,
+                  FCcutoff = fc_cutoff,
+                  # col = c("grey80", "grey50", "grey50", "red2"),
+                  pointSize = 2,
+    			  # labSize = 0,
+                  raster = TRUE,
+                  boxedLabels = FALSE,
+                  drawConnectors = TRUE,
+                  # title = plot_title,
+                  subtitle = paste0("Cluster = ", "10",
+                                    ", test = ", names(deg_list)[[i]]),
+                  caption = paste0("FC cutoff = ", fc_cutoff,
+                                   "; p-value cutoff = ", p_cutoff),
+                  )
+    plot(p1)
+
+
+
+
+}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r fig.width=8, fig.height=4}
+
+Idents(FLAa3_seu) <- "RNA_snn_res.0.2"
+genes <- rev(c("Lgr3", "Imp", "dati", "VGlut", "VAChT", "dimm", "Ms", "Capa"))
+
+levels(FLAa3_seu) <- c(5,7,8,6,9,2,1,3,0,4)
+
+p <- DotPlot(
+		object = FLAa3_seu, 
+		assay = "RNA",
+		features = genes,
+		dot.scale = 12,
+		cluster.idents = FALSE
+		) +
+    coord_flip() +
+    scale_colour_continuous_diverging(palette = "Vik") + 
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+
+levels(FLAa3_seu) <- c(0:9)
+```
+
+
+```{r}
+FLAa3_seu__female <- subset(x = FLAa3_seu, subset = sex == "female")
+FLAa3_seu__female
+```
+
+```{r}
+FLAa3_seu__male <- subset(x = FLAa3_seu, subset = sex == "male")
+FLAa3_seu__male
+```
+
+
+```{r fig.width=8, fig.height=4}
+
+Idents(FLAa3_seu__female) <- "RNA_snn_res.0.2"
+genes <- rev(c("Lgr3", "Imp", "dati", "VGlut", "VAChT", "dimm", "Ms", "Capa"))
+
+levels(FLAa3_seu__female) <- c(5,7,8,6,9,2,1,3,0,4)
+
+p <- DotPlot(
+		object = FLAa3_seu__female, 
+		assay = "RNA",
+		features = genes,
+		dot.scale = 12,
+		cluster.idents = FALSE
+		) +
+    coord_flip() +
+    scale_colour_continuous_diverging(palette = "Vik") + 
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+
+levels(FLAa3_seu__female) <- c(0:9)
+```
+
+
+
+```{r fig.width=8, fig.height=4}
+
+Idents(FLAa3_seu__male) <- "RNA_snn_res.0.2"
+genes <- rev(c("Lgr3", "Imp", "dati", "VGlut", "VAChT", "dimm", "Ms", "Capa"))
+
+levels(FLAa3_seu__male) <- c(5,7,8,6,9,2,1,3,0,4)
+
+p <- DotPlot(
+		object = FLAa3_seu__male, 
+		assay = "RNA",
+		features = genes,
+		dot.scale = 12,
+		cluster.idents = FALSE
+		) +
+    coord_flip() +
+    scale_colour_continuous_diverging(palette = "Vik") + 
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+
+levels(FLAa3_seu__male) <- c(0:9)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

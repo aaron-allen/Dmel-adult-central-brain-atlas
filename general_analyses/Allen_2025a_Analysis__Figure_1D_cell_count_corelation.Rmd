@@ -1,0 +1,494 @@
+---
+title: "Allen_2025a_Analysis__Figure_1D_cell_count_corelation"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(
+    # dev = c("cairo_pdf"),
+    dev = c("png", "cairo_pdf"),
+    dev.args=list(bg="transparent"),
+    fig.align = "center",
+    fig.height = 5,
+    fig.width = 8.5,
+    dpi = 100,
+    pdf.options(encoding = "ISOLatin9.enc"),
+    fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                    format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+    fig.retina = 1,
+    warning = TRUE,
+    message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(colorspace)
+library(cowplot)
+```
+
+
+
+
+
+# Load data
+
+
+
+```{r load-meta-brain}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+meta_cb
+```
+
+
+
+# counts
+
+
+
+
+```{r}
+codex_counts <- c(
+    
+    # zero = 0,
+    
+    "all" = 32388 + 1303,
+    "Achl_central" = 19218,
+    "Glut_central" = 6511,
+    "GABA_central" = 4342,
+    "KC" = 5177,
+    "KCab" = 1643,
+    "KCg" = 2490,
+    "KCapbp" = 916,
+    "all_typeII" = 4740,
+    
+    "ring_neuron" = 278,
+    "PAM" = 304,
+    
+    "SMPad1" = 160,                   # sex biased
+    "FLAa3" = 106,                   # sex biased
+    "CREa1B" = 99,                    # sex biased
+    "DM2_central" = 119,
+    "DL2_ventral" = 61,               # sex biased
+    "ALv1" = 199,
+    "ALad1" = 131,
+    "Motor" = 104,
+    
+    "hDeltaK" = 31,
+    "EPG" = 47,
+    "PEG" = 20,
+    "PFGs" = 24,
+    "PEN_a" = 20,
+    "PEN_b" = 22,
+    "PFNa" = 55,
+    "EL" = 17,
+    "ExR1" = 4,
+    
+    "Hug_FLA" = 8,
+    "Hug_PC" = 8,
+    "Hug_RG" = 4
+    
+)
+codex_counts
+```
+
+```{r}
+codex_counts %>% sort()
+```
+
+
+
+```{r}
+sc_counts <- c(
+    
+    # zero = 0,
+
+    "all" = 329466,
+    "Achl_central" = 152361 + 41448,
+    "Glut_central" = 65657 + 1257,
+    "GABA_central" = 57734,
+    "KC" = 41448,
+    "KCab" = 16158,
+    "KCg" = 18411,
+    "KCapbp" = 6879,
+    "all_typeII" = 55277,
+    
+    "ring_neuron" = 2287 + 1118,
+    "PAM" = 2652,
+    
+    "SMPad1" = 2029,                   # sex biased
+    "FLAa3" = 1162,                   # sex biased
+    "CREa1B" = 765,                    # sex biased
+    "DM2_central" = 1495,
+    "DL2_ventral" = 683,               # sex biased
+    "ALv1" = 1955,
+    "ALad1" = 1527,
+    "Motor" = 1257,
+    
+    "hDeltaK" = 477,
+    "EPG" = 545,
+    "PEG" = 198,
+    "PFGs" = 278,
+    "PEN_a" = 247,
+    "PEN_b" = 279,
+    "PFNa" = 552,
+    "EL" = 291,
+    "ExR1" = 32,
+    
+    "Hug_FLA" = 82,
+    "Hug_PC" = 94,
+    "Hug_RG" = 38
+    
+)
+sc_counts
+```
+
+
+```{r}
+cell_counts <- bind_rows(codex_counts, sc_counts) %>% 
+    add_column("source" = c("codex", "sc")) %>% 
+    gather("cell_type", "number", -source) %>% 
+    spread("source", "number")
+cell_counts
+```
+
+```{r}
+library(ggrepel)
+```
+
+
+```{r}
+cell_counts %>% 
+    ggplot(aes(x = codex, y = sc)) +
+        geom_point() +
+        geom_label_repel(aes(label = cell_type),
+                      box.padding   = 0.35, 
+                      point.padding = 0.5,
+                      segment.color = 'grey50') +
+        theme_classic()
+```
+
+
+
+
+```{r}
+cell_counts %>% 
+    ggplot(aes(x = codex, y = sc)) +
+        geom_point() +
+        # geom_label_repel(aes(label = cell_type),
+        #               box.padding   = 0.35, 
+        #               point.padding = 0.5,
+        #               segment.color = 'grey50') +
+        theme_classic()
+```
+
+
+
+
+```{r}
+library(ggcorrplot)
+library(ggpubr)
+library(corrr)
+```
+
+
+
+
+
+
+```{r}
+p1 <- cell_counts %>% 
+    ggplot(aes(x = codex, y = sc)) +
+        geom_point(size = 4) +
+        geom_smooth(method = lm) +
+        stat_cor(label.y = 300000, size = 5) +
+        stat_regline_equation(label.y = 270000, size = 5) +
+        theme_classic() +
+        theme(text = element_text(size = 14)) +
+        ggtitle("Cell Number Coorelation") +
+        theme(plot.title = element_text(face = "bold", hjust = 0.5))
+p1
+```
+
+
+
+
+```{r}
+p2 <- cell_counts %>% 
+    ggplot(aes(x = codex, y = sc)) +
+        geom_point(size = 4) +
+        geom_smooth(method = lm) +
+        stat_cor(size = 5) +
+        stat_regline_equation(size = 5) +
+        scale_y_log10() +  
+        scale_x_log10() +
+        geom_label_repel(aes(label = cell_type),
+                      box.padding   = 0.35, 
+                      point.padding = 0.5,
+                      segment.color = 'grey50') +
+        ggtitle("Cell Number Coorelation") +
+        theme_classic() +
+        theme(text = element_text(size = 14)) +
+        theme(plot.title = element_text(face = "bold", hjust = 0.5))
+p2
+```
+
+
+
+
+
+
+
+# getting the counts ...
+
+```{r}
+typeII_seu
+```
+
+
+```{r}
+typeII_metadata <- typeII_seu@meta.data
+typeII_metadata
+```
+
+
+```{r}
+typeII_metadata %>% 
+    dplyr::count(cell_type) %>% 
+    filter(str_detect(string = cell_type, pattern = "unknown", negate = TRUE))
+```
+
+
+
+
+
+
+```{r}
+all_metadata <- meta_cb@meta.data
+all_metadata
+```
+
+
+```{r}
+colnames(all_metadata)
+```
+
+
+```{r}
+all_metadata %>% 
+    dplyr::count(RNA_snn_res.4) %>% 
+    filter(RNA_snn_res.4 %in% c(50,97))
+```
+
+
+```{r}
+all_metadata %>% 
+    dplyr::count(subcluster_clusters) %>% 
+    filter(str_detect(string = subcluster_clusters, pattern = "KC"))
+```
+
+```{r}
+all_metadata %>% 
+    dplyr::count(annotation_broad_cell_type_ext_fix)
+```
+
+
+
+
+
+
+```{r}
+all_metadata %>% 
+    # filter(sex == "female") %>% 
+    dplyr::count(RNA_snn_res.10) %>% 
+    filter(RNA_snn_res.10 %in% c(49)) #%>% 
+    # mutate(n_adj = round(n * 2.324472, digits = 0))
+```
+
+
+
+```{r}
+all_metadata %>% 
+    filter(sex == "female") %>% 
+    dplyr::count(RNA_snn_res.10) %>% 
+    filter(RNA_snn_res.10 %in% c(33)) %>% 
+    mutate(n_adj = round(n * 2.324472, digits = 0))
+```
+
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("odd", "drm")
+plist <- FeaturePlot(object = meta_cb,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 1,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r}
+all_metadata %>% 
+    filter(sex == "female") %>%
+    dplyr::count(RNA_snn_res.30) %>% 
+    filter(RNA_snn_res.30 %in% c(438)) %>% 
+    mutate(n_adj = round(n * 2.324472, digits = 0))
+```
+
+```{r fig.width=12, fig.height=12}
+
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.30",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+
+```
+
+
+
+
+
+
+```{r}
+all_metadata %>% 
+    dplyr::count(sex)
+```
+
+
+```{r}
+187728/141738
+```
+
+
+```{r}
+(187728+141738)/141738
+```
+
+
+
+
+
+```{r}
+alad1_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_ALad1_metablob--round2.rds")
+alad1_seu
+```
+
+
+
+
+
+
+
+
+```{r}
+endo_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_endocrine_NEW_pub_seu--round3.rds")
+endo_seu
+```
+
+```{r}
+endo_seu$cell_type
+```
+
+
+```{r}
+FetchData(object = endo_seu, vars = "cell_type") %>% 
+    dplyr::count(cell_type) %>% 
+    filter(cell_type %in% c("c07", "c11", "c25"))
+```
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
+
+
+
+
+
+

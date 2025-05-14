@@ -1,0 +1,583 @@
+---
+title: "Allen_2025b_Analysis__Figure_4_Dh31"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(colorspace)
+library(tidyverse)
+```
+
+
+
+## Load Data
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+DefaultAssay(meta_cb) <- "RNA"
+meta_cb
+```
+
+
+
+
+
+
+
+# Dh31
+
+
+
+
+## tsnes
+
+```{r fig.width=4, fig.height=7}
+FetchData(object = meta_cb, vars = c("sex", "annotation_broad_cell_type_ext_fix", "experiment")) %>%
+	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+    dplyr::count(sex) %>% 
+    spread(sex, n) %>% 
+    mutate(male_female_ratio = male/female)
+```
+
+
+
+
+```{r fig.width=4, fig.height=7}
+FetchData(object = meta_cb, vars = c("sex", "subcluster_clusters", "experiment")) %>% 
+	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+    filter(subcluster_clusters == "GABA_012") %>% 
+    dplyr::count(sex) %>% 
+    spread(sex, n) %>% 
+    mutate(male_female_ratio = male/female)
+```
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("Gad1", "TfAP-2", "Dh31", "fru")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.2, 
+           min.cutoff = 1,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+<!-- ```{r fig.width=24, fig.height=8} -->
+<!-- DefaultAssay(meta_cb) <- "RNA" -->
+<!-- Plot_Density_Custom(seurat_object = meta_cb,  -->
+<!--                         features = c("Gad1", "TfAP-2"), -->
+<!--                         reduction = "tsne_60pcs", -->
+<!--                         joint = TRUE, -->
+<!--                         pt.size = 1) +  -->
+<!--     coord_fixed() -->
+<!-- DefaultAssay(meta_cb) <- "Raw" -->
+<!-- ``` -->
+
+
+
+
+
+<!-- ```{r fig.width=16, fig.height=14} -->
+<!-- DefaultAssay(meta_cb) <- "RNA" -->
+<!-- Plot_Density_Joint_Only(seurat_object = meta_cb,  -->
+<!--                         features = c("Gad1", "TfAP-2"), -->
+<!--                         reduction = "tsne_60pcs",  -->
+<!--                         pt.size = 1.6) +  -->
+<!--     coord_fixed() -->
+<!-- DefaultAssay(meta_cb) <- "Raw" -->
+<!-- ``` -->
+
+
+
+<!-- ```{r fig.width=16, fig.height=14} -->
+<!-- DefaultAssay(meta_cb) <- "RNA" -->
+<!-- Plot_Density_Joint_Only(seurat_object = meta_cb,  -->
+<!--                         features = c("Gad1", "TfAP-2"), -->
+<!--                         reduction = "tsne_60pcs",  -->
+<!--                         pt.size = 1.6)  +  -->
+<!--     theme_void() + -->
+<!--     NoAxes() + -->
+<!--     NoLegend() +  -->
+<!--     coord_fixed() +  -->
+<!--     theme(title = element_blank()) -->
+<!-- DefaultAssay(meta_cb) <- "Raw" -->
+<!-- ``` -->
+
+
+
+
+```{r fig.height=12, fig.width=16}
+
+Idents(meta_cb) <- "subcluster_clusters"
+my_cells <- WhichCells(object = meta_cb, idents = "GABA_012")
+p1 <- DimPlot(object = meta_cb,
+                reduction = "tsne_240pcs",
+                cells.highlight = my_cells,
+                cols = "lightsteelblue2",
+                cols.highlight = "black",
+                sizes.highlight = 0.2,
+                pt.size = 0.2,
+                raster = FALSE) +
+            NoLegend() +
+            NoAxes() +
+            coord_fixed()
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+	
+
+```
+
+
+
+
+
+
+
+
+
+
+## Boxplots
+
+
+```{r fig.height=6, fig.width=6}
+VlnPlot(object = meta_cb, features = "Dh31", cols = c("#C77CFF", "#00BFC4"), pt.size = 0, idents = "GABA_012", group.by = "sex", assay = "RNA", slot = "data", log = FALSE)
+VlnPlot(object = meta_cb, features = "Dh31", cols = c("#C77CFF", "#00BFC4"), pt.size = 0, idents = "GABA_012", group.by = "sex", assay = "RNA", slot = "counts", log = TRUE)
+```
+
+
+
+```{r fig.height=6, fig.width=6}
+VlnPlot(object = meta_cb, features = "Dh31", cols = c("#C77CFF", "#00BFC4"), pt.size = 0, idents = "GABA_012", split.by = "sex", group.by = "experiment", assay = "RNA", slot = "data", log = FALSE)
+VlnPlot(object = meta_cb, features = "Dh31", cols = c("#C77CFF", "#00BFC4"), pt.size = 0, idents = "GABA_012", split.by = "sex", group.by = "experiment", assay = "RNA", slot = "counts", log = TRUE)
+```
+
+
+
+
+```{r}
+FetchData(object = meta_cb, vars = c("Dh31", "fru", "sex", "subcluster_clusters", "experiment"), slot = "counts") %>% 
+	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+    filter(subcluster_clusters == "GABA_012") %>% 
+    ggplot(aes(x = experiment, y = Dh31, fill = sex)) +
+        geom_boxplot() +
+        scale_y_log10()
+```
+
+
+
+<!-- ```{r} -->
+<!-- VlnPlot_scCustom(seurat_object = meta_cb, features = "Dh31", colors_use = c("#C77CFF", "#00BFC4"), idents = "GABA_012", group.by = "sex", assay = "RNA")#, plot_median = TRUE) & NoLegend() -->
+<!-- VlnPlot_scCustom(seurat_object = meta_cb, features = "Dh31", colors_use = c("#C77CFF", "#00BFC4"), idents = "GABA_012", group.by = "sex", assay = "RNA")#, plot_boxplot = TRUE) & NoLegend() -->
+<!-- ``` -->
+
+
+
+
+
+
+```{r}
+VlnPlot(object = meta_cb, features = "fru", pt.size = 0, idents = "GABA_012", group.by = "sex", assay = "RNA")
+```
+
+
+
+
+
+```{r warning=FALSE, message=FALSE}
+library(ggbeeswarm)
+DefaultAssay(meta_cb) <- "RNA"
+
+FetchData(object = meta_cb, vars = c("sex", "experiment", "Dh31", "subcluster_clusters")) %>% 
+	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+    filter(subcluster_clusters == "GABA_012") %>%  
+    ggplot(aes(x = sex, y = Dh31)) +
+        # geom_boxplot() +
+        # geom_violin() +
+        geom_quasirandom() +
+        stat_summary(fun.y = mean, aes(color = "red"),
+                     geom = "point") + 
+        stat_summary(fun.data = mean_se, aes(color = "red"),
+                     geom = "errorbar",  
+                     width = 0.4) + 
+        facet_wrap(~experiment, ncol = 7)
+
+# FetchData(object = meta_cb, vars = c("sex", "experiment", "Dh31", "subcluster_clusters"), slot = "counts") %>% 
+# 	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+#     filter(subcluster_clusters == "GABA_012") %>% 
+#     ggplot(aes(x = sex, y = Dh31)) +
+#         # geom_boxplot() +
+#         # geom_violin() +
+#         geom_quasirandom() +
+#         stat_summary(fun.y = mean, 
+#                      geom = "point") + 
+#         stat_summary(fun.data = mean_se,
+#                      geom = "errorbar",  
+#                      width = 0.4) + 
+#         facet_wrap(~experiment, ncol = 7) +
+#         scale_y_continuous(trans = "log10")
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE}
+library(ggbeeswarm)
+DefaultAssay(meta_cb) <- "RNA"
+
+FetchData(object = meta_cb, vars = c("sex", "experiment", "Dh31", "subcluster_clusters")) %>% 
+	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+    filter(subcluster_clusters == "GABA_012") %>%  
+    ggplot(aes(x = sex, y = Dh31)) +
+        geom_boxplot(outlier.size = -1) +
+        # geom_violin() +
+        # geom_quasirandom() +
+        stat_summary(fun.y = mean,  aes(color = "red"),
+                     geom = "point") + 
+        stat_summary(fun.data = mean_se, aes(color = "red"),
+                     geom = "errorbar",  
+                     width = 0.4) + 
+        facet_wrap(~experiment, ncol = 7)
+
+# FetchData(object = meta_cb, vars = c("sex", "experiment", "Dh31", "subcluster_clusters"), slot = "counts") %>% 
+# 	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+#     filter(subcluster_clusters == "GABA_012") %>% 
+#     ggplot(aes(x = sex, y = Dh31)) +
+#         # geom_boxplot() +
+#         # geom_violin() +
+#         geom_quasirandom() +
+#         stat_summary(fun.y = mean, 
+#                      geom = "point") + 
+#         stat_summary(fun.data = mean_se,
+#                      geom = "errorbar",  
+#                      width = 0.4) + 
+#         facet_wrap(~experiment, ncol = 7) +
+#         scale_y_continuous(trans = "log10")
+```
+
+
+
+```{r warning=FALSE, message=FALSE}
+library(ggbeeswarm)
+DefaultAssay(meta_cb) <- "RNA"
+
+FetchData(object = meta_cb, vars = c("sex", "experiment", "Dh31", "subcluster_clusters")) %>% 
+	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+    filter(subcluster_clusters == "GABA_012") %>% 
+    gather("gene", "expression", -sex, -subcluster_clusters, -experiment) %>% 
+    ggplot(aes(x = sex, y = expression)) +
+        # geom_boxplot() +
+        # geom_violin() +
+        geom_quasirandom() +
+        stat_summary(fun.y = mean,  aes(color = "red"),
+                     geom = "point") + 
+        stat_summary(fun.data = mean_se, aes(color = "red"),
+                     geom = "errorbar",  
+                     width = 0.4) + 
+        # geom_point() +
+        facet_wrap(~gene)
+
+FetchData(object = meta_cb, vars = c("sex", "experiment", "Dh31", "subcluster_clusters"), slot = "counts") %>% 
+	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+    filter(subcluster_clusters == "GABA_012") %>% 
+    gather("gene", "expression", -sex, -subcluster_clusters, -experiment) %>% 
+    ggplot(aes(x = sex, y = expression)) +
+        # geom_boxplot() +
+        # geom_violin() +
+        geom_quasirandom() +
+        stat_summary(fun.y = mean,  aes(color = "red"),
+                     geom = "point") + 
+        stat_summary(fun.data = mean_se, aes(color = "red"),
+                     geom = "errorbar",  
+                     width = 0.4) + 
+        # geom_point() +
+        facet_wrap(~gene) +
+        # scale_y_continuous(trans = "log10") +
+        scale_y_log10()
+```
+
+
+
+
+
+
+
+
+## Dot Plots
+
+
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=34, fig.height=3}
+DefaultAssay(meta_cb) <- "RNA"
+
+
+DotPlot(object = meta_cb, features = c("TfAP-2", "Gad1", "fru", "Dh31"), col.min = -2, col.max = 2, scale.min = 0, scale.max = 60) +
+    scale_colour_continuous_diverging(palette = "Vik") + 
+    coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.title.x = element_blank()) 
+
+DotPlot(object = subset(x = meta_cb, subset = sex == "female"), features = c("TfAP-2", "Gad1", "fru", "Dh31"), col.min = -2, col.max = 2, scale.min = 0, scale.max = 60) +
+    scale_colour_continuous_diverging(palette = "Vik") + 
+    coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.title.x = element_blank()) 
+
+DotPlot(object = subset(x = meta_cb, subset = sex == "male"), features = c("TfAP-2", "Gad1", "fru", "Dh31"), col.min = -2, col.max = 2, scale.min = 0, scale.max = 60) +
+    scale_colour_continuous_diverging(palette = "Vik") + 
+    coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.title.x = element_blank()) 
+```
+
+
+
+
+
+
+
+
+## Volcano Plots
+
+
+
+
+```{r}
+options(scipen = 1)
+deg_list <- list()
+
+
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+					  "Yp1", "Yp2", "Yp3", "whe",
+					  "Sxl", "ssx", "tra", "tra2", "fru", "dsx",
+                      "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3"
+)
+
+```
+
+
+
+```{r}
+deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_deseq_df_2.csv", col_types = cols())
+deg_list[["deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_DESeq2_subcluster_clusters_RNA_pseudo_bulk_all_genes.csv", col_types = cols())
+deg_list[["mast"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_MAST_subcluster_clusters_RNA_pseudo_bulk_regvar_all_genes.csv", col_types = cols())
+deg_list[["negbinom"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_negbinom_subcluster_clusters_RNA_pseudo_bulk_regvar_all_genes.csv", col_types = cols())
+deg_list[["wilcox"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_wilcox_subcluster_clusters_RNA_pseudo_bulk_all_genes.csv", col_types = cols())
+```
+
+```{r}
+names(deg_list)
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+x_lims <- c(3,6,6,6,6)
+y_lims <- c(20,10,30,30,8)
+
+for (i in seq_along(deg_list)) {
+    
+    fc_cutoff <- 1
+    p_cutoff <- 0.01
+    temp_deg <- deg_list[[i]] %>% 
+    	filter(Cluster == "GABA_012") %>% 
+        filter(!Gene %in% iso_genes_remove)
+    
+    if (names(deg_list)[[i]] == "zinb-deseq") {
+        x_data <- "log2FoldChange"
+        y_data <- "padj"
+    } else {
+        x_data <- "avg_log2FC"
+        y_data <- "p_val_adj"
+    }
+    
+    p1 <- EnhancedVolcano::EnhancedVolcano(toptable = temp_deg, 
+                  lab = temp_deg$Gene,
+                  xlim = c(-x_lims[i], x_lims[i]),
+                  ylim = c(0, y_lims[i]),
+                  x = x_data, 
+                  y = y_data,
+                  pCutoff = p_cutoff,
+                  FCcutoff = fc_cutoff,
+                  # col = c("grey80", "grey50", "grey50", "red2"),
+                  pointSize = 2,
+    			  # labSize = 0,
+                  raster = TRUE,
+                  boxedLabels = FALSE,
+                  drawConnectors = TRUE,
+                  # title = plot_title,
+                  subtitle = paste0("Cluster = ", "GABA_012",
+                                    ", test = ", names(deg_list)[[i]]),
+                  caption = paste0("FC cutoff = ", fc_cutoff,
+                                   "; p-value cutoff = ", p_cutoff),
+                  )
+    plot(p1)
+
+
+
+
+}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+

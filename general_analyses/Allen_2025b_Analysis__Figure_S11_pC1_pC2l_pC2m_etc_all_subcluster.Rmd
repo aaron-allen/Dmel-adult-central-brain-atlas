@@ -1,0 +1,2331 @@
+---
+title: "Allen_2025b_Analysis__Figure_S11_pC1_pC2l_pC2m_etc_all_subcluster"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+## Parameters
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load Data
+
+
+
+```{r}
+frudsxCoPos_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+frudsxCoPos_seu
+```
+
+
+```{r}
+pC1_ish_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_pC1ish__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+pC1_ish_seu
+```
+
+
+
+```{r}
+pC2l_ish_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_pC2lish__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+pC2l_ish_seu
+```
+
+
+```{r}
+pCd1_ish_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_pCd1ish__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+pCd1_ish_seu
+```
+
+
+
+```{r}
+pC2m_ish_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_pC2mish__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+pC2m_ish_seu
+```
+
+
+<!-- ```{r} -->
+<!-- markers_pC1 <- read_csv(file = "../../proj136/analyses/markers/subclustering_pC1ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv") -->
+<!-- markers_pC2l <- read_csv(file = "../../proj136/analyses/markers/subclustering_pC2lish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv") -->
+<!-- markers_pC2m <- read_csv(file = "../../proj136/analyses/markers/subclustering_pC2mish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv") -->
+<!-- ``` -->
+
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+```
+
+
+
+
+
+
+# DEG prep
+
+
+
+
+```{r}
+options(scipen = 1)
+deg_list <- list()
+deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_deseq_df_2.csv")#, col_types = cols())
+deg_list[["zinb-deseq"]]
+```
+
+
+
+
+
+## Functions
+
+### plot_sex_bias_volcanoplots
+
+```{r}
+plot_sex_bias_volcanoplots <- function(
+    clusterOI = NULL,
+    deg_df = NULL,
+    x_lims = NULL,
+    y_lims = NULL,
+    p_cutoff = 0.01,
+    fc_cutoff = 1,
+    is_zinb = TRUE
+){
+    clusterOI_deg_gene_filtered <- deg_df %>% 
+        filter(Cluster == clusterOI) %>% 
+        dplyr::filter(!Gene %in% c("lncRNA:roX1", "lncRNA:roX2")) %>%
+        arrange(desc(abs(log2FoldChange)))
+    # clusterOI_deg_gene_filtered
+    
+    if (is_zinb) {
+        x_data <- "log2FoldChange"
+        y_data <- "padj"
+    } else {
+        x_data <- "avg_log2FC"
+        y_data <- "p_val_adj"
+    }
+    if (is.null(x_lims)) {
+        x_lims <- ceiling(max(-log10(clusterOI_deg_gene_filtered[[x_data]]), na.rm = TRUE))
+    }
+    if (is.null(y_lims)) {
+        y_lims <- ceiling(max(-log10(clusterOI_deg_gene_filtered[[y_data]]), na.rm = TRUE))
+    }
+
+    p1 <- EnhancedVolcano::EnhancedVolcano(
+        toptable = clusterOI_deg_gene_filtered,
+        lab = clusterOI_deg_gene_filtered$Gene,
+        xlim = c(-x_lims, x_lims),
+        ylim = c(0, y_lims),
+        x = x_data,
+        y = y_data,
+        pCutoff = p_cutoff,
+        FCcutoff = fc_cutoff,
+        pointSize = 2,
+        raster = TRUE,
+        boxedLabels = FALSE,
+        drawConnectors = TRUE,
+        subtitle = paste0("Cluster = ", clusterOI,
+                        ", test = ", "zinb-deseq"),
+        caption = paste0("FC cutoff = ", fc_cutoff,
+                       "; p-value cutoff = ", p_cutoff)
+    )
+    return(p1)
+}
+
+```
+
+
+# Gene Filtering
+
+
+
+## iso and trans genes
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4"
+)
+```
+
+
+
+## dataset specific genes
+
+
+### load pre-calc. counts
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent <- read_csv(file = "../../proj136/analyses/all_gene_max_sum__by_exp_wPercent.csv")
+head(all_gene_max_sum__by_exp_together_wPercent)
+```
+
+
+```{r}
+all_gene_max_sum <- read_csv(file = "../../proj136/analyses/all_gene_max_sum.csv")
+head(all_gene_max_sum)
+```
+
+
+
+### filter candidates
+
+```{r}
+genes_adfca_gt_30p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(Dataset == "adfca") %>%
+    dplyr::filter(percent_dataset > 30) %>%
+    pull(RowName)
+length(genes_adfca_gt_30p)
+```
+
+
+```{r}
+genes_any_gt_60p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(percent_dataset > 60) %>% 
+    pull(RowName) %>% 
+    unique()
+length(genes_any_gt_60p)
+```
+
+
+```{r}
+genes_low_exp <- all_gene_max_sum %>%
+    dplyr::filter(RowSum < 400) %>% 
+    dplyr::filter(RowMax < 4) %>% 
+    pull(RowName) %>% 
+    unique()
+length(genes_low_exp)
+```
+
+
+```{r}
+genes_remove <- sort(unique(c(genes_adfca_gt_30p, genes_any_gt_60p, genes_low_exp)))
+length(genes_remove)
+```
+
+
+```{r}
+genes_sexed_dataset <- all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    dplyr::filter(sexed_dataset_counts > 45) %>% 
+    pull(RowName)
+length(genes_sexed_dataset)
+```
+
+```{r}
+str_subset(string = genes_any_gt_60p, pattern = "whe")
+```
+
+```{r}
+str_subset(string = genes_sexed_dataset, pattern = "Eip93F")
+```
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    dplyr::filter(RowName == "Eip93F")
+```
+
+
+## filter deg list
+
+```{r}
+deg_gene_filtered <- deg_list[["zinb-deseq"]] %>%
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset)
+deg_gene_filtered
+```
+
+
+
+
+
+
+
+
+
+
+
+# Plots
+
+
+## pC1
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pC1_ish_seu, 
+		group.by = "RNA_snn_res.0.1",
+        reduction = "tsne_10pcs", 
+		pt.size = 12,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC1")
+DimPlot(object = pC1_ish_seu, 
+		group.by = "RNA_snn_res.6",
+        reduction = "tsne_10pcs", 
+		pt.size = 12,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC1")
+```
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pC1_ish_seu, 
+		group.by = "RNA_snn_res.0.1",
+        reduction = "tsne_20pcs", 
+		pt.size = 12,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC1")
+DimPlot(object = pC1_ish_seu, 
+		group.by = "RNA_snn_res.6",
+        reduction = "tsne_20pcs", 
+		pt.size = 12,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC1")
+```
+
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pC1_ish_seu, 
+		group.by = "RNA_snn_res.6",
+        reduction = "tsne_20pcs", 
+		pt.size = 2,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC1")
+DimPlot(object = pC1_ish_seu, 
+		group.by = "RNA_snn_res.6",
+        reduction = "tsne_20pcs", 
+		pt.size = 2,
+        label = FALSE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC1")
+```
+
+
+```{r}
+FetchData(object = pC1_ish_seu, vars = "RNA_snn_res.6") %>% dplyr::count(RNA_snn_res.6) %>% arrange(n) %>% mutate(n_adj = round(n/9.8, digits = 1))
+```
+
+
+
+
+
+
+### main text
+
+```{r}
+
+# job::job({
+#     library(future)
+#     # plan("multisession", workers = 8)
+#     options(future.globals.maxSize = 8*1024*1024^2)
+# 
+#     Idents(pC1_ish_seu) <- "RNA_snn_res.0.1"
+#     markers_pC1_res01 <- FindAllMarkers(object = pC1_ish_seu, features = dplyr::setdiff(rownames(pC1_ish_seu), iso_genes_remove), logfc.threshold = 0.5, only.pos = TRUE, verbose = TRUE)
+#     write_csv(x = markers_pC1_res01, file = "../../proj136/analyses/markers/subclustering_pC1ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_0.1__cluster_markers.csv")
+# 
+#     job::export(c(markers_pC1_res01))
+# }, import = c(pC1_ish_seu, iso_genes_remove))
+
+
+markers_pC1_res01 <- read_csv(file = "../../proj136/analyses/markers/subclustering_pC1ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_0.1__cluster_markers.csv")
+```
+
+
+
+
+```{r}
+top_markers_pC1 <- markers_pC1_res01 %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(avg_log2FC > 1) %>%
+    group_by(cluster) %>%
+    slice_head(n = 5) %>%
+    arrange(cluster, desc(avg_log2FC)) %>% 
+    ungroup()
+top_markers_pC1
+```
+
+
+
+```{r fig.width=12, fig.height=4}
+genes_to_plot <- unique(top_markers_pC1$gene)
+DotPlot(object = pC1_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.0.1", dot.scale = 8) +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+hcl_palettes(palette = "Set2")
+```
+
+
+
+```{r fig.width=6, fig.height=8}
+VlnPlot(object = pC1_ish_seu, features = c("fru", "CG42458", "Dbx", "CG15537"), pt.size = -1, group.by = "RNA_snn_res.0.1", stack = TRUE)
+```
+
+
+
+```{r fig.width=8, fig.height=3.6}
+VlnPlot(object = pC1_ish_seu, features = c("fru", "CG42458", "Dbx", "CG15537"), pt.size = -1, group.by = "RNA_snn_res.0.1", stack = TRUE)
+```
+
+
+
+
+
+#### logFC
+
+Overall Counts with no sleep or species
+
+female - 113357
+male   - 116227
+
+
+```{r}
+clusterwise_logFC <- FetchData(object = pC1_ish_seu, vars = c("sex", "experiment", "RNA_snn_res.0.1")) %>% 
+    dplyr::filter(!experiment %in% c("sleep", "species")) %>% 
+    dplyr::count(sex, RNA_snn_res.0.1, .drop = FALSE) %>% 
+    spread(sex, n) %>% 
+    dplyr::mutate(male_adj = male * 113357 / 116227,
+                  sex_ratio = ((female+1)/(male_adj+1)),
+    			  log_sex_ratio = log2(sex_ratio),
+    			  )
+# clusterwise_logFC
+
+logFC_metadata <- FetchData(object = pC1_ish_seu, vars = c("sex", "RNA_snn_res.0.1")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(clusterwise_logFC, by = "RNA_snn_res.0.1")
+# logFC_metadata
+
+pC1_ish_seu <- AddMetaData(object = pC1_ish_seu, metadata = logFC_metadata$sex_ratio, col.name = "sex_ratio")
+pC1_ish_seu <- AddMetaData(object = pC1_ish_seu, metadata = logFC_metadata$log_sex_ratio, col.name = "log2FC_sex")
+```
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=14, fig.width=20}
+
+FeaturePlot(
+		object = pC1_ish_seu,
+		features = "sex_ratio",
+		reduction = "tsne_20pcs",
+		pt.size = 3
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(0,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+FeaturePlot(
+		object = pC1_ish_seu,
+		features = "log2FC_sex",
+		reduction = "tsne_20pcs",
+		pt.size = 3
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+```
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=14, fig.width=20}
+
+FeaturePlot(
+		object = pC1_ish_seu,
+		features = "log2FC_sex",
+		reduction = "tsne_20pcs",
+		pt.size = 3
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed() +
+    ylim(-90,100) +
+    xlim(-70,80)
+
+```
+
+```{r}
+pC1_ish_split <- SplitObject(object = pC1_ish_seu, split.by = "sex")
+pC1_ish_split
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=14, fig.width=28}
+
+colours_plot <- c("#00bfc4","#c77cff")
+for (i in seq_along(pC1_ish_split)) {
+    
+    p1 <- DimPlot(
+            object = pC1_ish_split[[i]], 
+    		group.by = "sex",
+    		cols = colours_plot[[i]],
+            reduction = "tsne_20pcs", 
+    		pt.size = 2,
+            label = FALSE, 
+            label.box = FALSE,
+    		raster = FALSE,
+    		raster.dpi = c(2048,2048)
+		) + 
+        NoLegend() + 
+        coord_fixed() +
+        coord_fixed() +
+        ylim(-90,100) +
+        xlim(-70,80)
+    plot(p1)
+
+}
+
+```
+
+
+
+
+
+### supp
+
+
+
+```{r}
+
+# job::job({
+#     library(future)
+#     # plan("multisession", workers = 8)
+#     options(future.globals.maxSize = 8*1024*1024^2)
+# 
+#     Idents(pC1_ish_seu) <- "RNA_snn_res.6"
+#     markers_pC1_res6 <- FindAllMarkers(object = pC1_ish_seu, features = dplyr::setdiff(rownames(pC1_ish_seu), iso_genes_remove), logfc.threshold = 0.5, only.pos = TRUE, verbose = TRUE)
+#     write_csv(x = markers_pC1_res6, file = "../../proj136/analyses/markers/subclustering_pC1ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_6__cluster_markers.csv")
+# 
+#     job::export(c(markers_pC1_res6))
+# }, import = c(pC1_ish_seu, iso_genes_remove))
+
+
+markers_pC1_res6 <- read_csv(file = "../../proj136/analyses/markers/subclustering_pC1ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_6__cluster_markers.csv")
+```
+
+
+
+```{r}
+top_markers_pC1 <- markers_pC1_res6 %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(avg_log2FC > 1) %>%
+    group_by(cluster) %>%
+    slice_head(n = 5) %>%
+    arrange(cluster, desc(avg_log2FC)) %>% 
+    ungroup()
+top_markers_pC1
+```
+
+
+
+```{r fig.width=20, fig.height=8}
+genes_to_plot <- unique(top_markers_pC1$gene)
+DotPlot(object = pC1_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.6") +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+```{r fig.width=20, fig.height=9}
+
+pC1_split <- SplitObject(object = pC1_ish_seu, split.by = "experiment")
+
+for (i in seq_along(pC1_split)) {
+
+    genes_to_plot <- unique(top_markers_pC1$gene)
+    plot(DotPlot(object = pC1_split[[i]], features = genes_to_plot, group.by = "RNA_snn_res.6") +
+        scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+        ggtitle(names(pC1_split)[[i]])
+    )
+    
+}
+```
+
+
+
+```{r fig.width=4, fig.height=8}
+genes_to_plot <- c("Imp", "dati", "dsx", "fru")
+DotPlot(object = pC1_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.6", scale = FALSE) +
+    scale_colour_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+#### logFC
+
+Overall Counts with no sleep or species
+
+female - 113357
+male   - 116227
+
+
+```{r}
+clusterwise_logFC <- FetchData(object = pC1_ish_seu, vars = c("sex", "experiment", "RNA_snn_res.6")) %>% 
+    dplyr::filter(!experiment %in% c("sleep", "species")) %>% 
+    dplyr::count(sex, RNA_snn_res.6, .drop = FALSE) %>% 
+    spread(sex, n) %>% 
+    dplyr::mutate(male_adj = male * 113357 / 116227,
+                  sex_ratio = ((female+1)/(male_adj+1)),
+    			  log_sex_ratio = log2(sex_ratio),
+    			  )
+# clusterwise_logFC
+
+logFC_metadata <- FetchData(object = pC1_ish_seu, vars = c("sex", "RNA_snn_res.6")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(clusterwise_logFC, by = "RNA_snn_res.6")
+# logFC_metadata
+
+pC1_ish_seu <- AddMetaData(object = pC1_ish_seu, metadata = logFC_metadata$sex_ratio, col.name = "sex_ratio")
+pC1_ish_seu <- AddMetaData(object = pC1_ish_seu, metadata = logFC_metadata$log_sex_ratio, col.name = "log2FC_sex")
+```
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+
+FeaturePlot(
+		object = pC1_ish_seu,
+		features = "sex_ratio",
+		reduction = "tsne_20pcs",
+		pt.size = 2
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(0,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+FeaturePlot(
+		object = pC1_ish_seu,
+		features = "log2FC_sex",
+		reduction = "tsne_20pcs",
+		pt.size = 2
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+```
+
+
+
+
+
+```{r fig.width=3, fig.height=8}
+genes_to_plot <- c("sex_ratio")
+DotPlot(object = pC1_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.6", dot.scale = 12) +
+    scale_colour_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC1_ish_seu, vars = c("log2FC_sex","RNA_snn_res.6")) %>% 
+    select(log2FC_sex, RNA_snn_res.6) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.6, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.6, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-1,1), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC1_ish_seu, vars = c("log2FC_sex","RNA_snn_res.6")) %>% 
+    select(log2FC_sex, RNA_snn_res.6) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.6, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.6, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC1_ish_seu, vars = c("log2FC_sex","RNA_snn_res.6")) %>% 
+    select(log2FC_sex, RNA_snn_res.6) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.6, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.6, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-4,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+
+
+
+
+
+### DEG
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+plot_sex_bias_volcanoplots(clusterOI = "Achl_058", deg_df = deg_gene_filtered)
+plot_sex_bias_volcanoplots(clusterOI = "Achl_058", deg_df = deg_gene_filtered, x_lims = 2.4, y_lims = 34)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## pC2l
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pC2l_ish_seu, 
+		group.by = "RNA_snn_res.0.1",
+        reduction = "tsne_20pcs", 
+		pt.size = 12,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC2l")
+DimPlot(object = pC2l_ish_seu, 
+		group.by = "RNA_snn_res.8",
+        reduction = "tsne_20pcs", 
+		pt.size = 12,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC2l")
+```
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pC2l_ish_seu, 
+		group.by = "RNA_snn_res.8",
+        reduction = "tsne_20pcs", 
+		pt.size = 2,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC2l")
+DimPlot(object = pC2l_ish_seu, 
+		group.by = "RNA_snn_res.8",
+        reduction = "tsne_20pcs", 
+		pt.size = 2,
+        label = FALSE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC2l")
+```
+
+
+
+```{r}
+FetchData(object = pC2l_ish_seu, vars = "RNA_snn_res.8") %>% dplyr::count(RNA_snn_res.8) %>% arrange(n) %>% mutate(n_adj = round(n/9.8, digits = 1))
+```
+
+
+
+
+```{r}
+
+
+# job::job({
+#     library(future)
+#     # plan("multisession", workers = 8)
+#     options(future.globals.maxSize = 8*1024*1024^2)
+# 
+#     Idents(pC2l_ish_seu) <- "RNA_snn_res.8"
+#     markers_pC2l_res8 <- FindAllMarkers(object = pC2l_ish_seu, features = dplyr::setdiff(rownames(pC2l_ish_seu), iso_genes_remove), logfc.threshold = 0.5, only.pos = TRUE, verbose = TRUE)
+#     write_csv(x = markers_pC2l_res8, file = "../../proj136/analyses/markers/subclustering_pC2lish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_8__cluster_markers.csv")
+# 
+#     job::export(c(markers_pC2l_res8))
+# }, import = c(pC2l_ish_seu, iso_genes_remove))
+
+markers_pC2l_res8 <- read_csv(file = "../../proj136/analyses/markers/subclustering_pC2lish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_8__cluster_markers.csv")
+
+```
+
+
+
+```{r}
+top_markers_pC2l <- markers_pC2l_res8 %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(avg_log2FC > 1) %>%
+    group_by(cluster) %>%
+    slice_head(n = 5) %>%
+    arrange(cluster, desc(avg_log2FC)) %>% 
+    ungroup()
+top_markers_pC2l
+```
+
+
+
+```{r fig.width=20, fig.height=8}
+genes_to_plot <- unique(top_markers_pC2l$gene)
+DotPlot(object = pC2l_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.8") +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r fig.width=20, fig.height=9}
+
+pC2l_split <- SplitObject(object = pC2l_ish_seu, split.by = "experiment")
+
+for (i in seq_along(pC2l_split)) {
+
+    genes_to_plot <- unique(top_markers_pC2l$gene)
+    plot(DotPlot(object = pC2l_split[[i]], features = genes_to_plot, group.by = "RNA_snn_res.8") +
+        scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+        ggtitle(names(pC2l_split)[[i]])
+    )
+    
+}
+```
+
+
+
+
+```{r fig.width=4, fig.height=8}
+genes_to_plot <- c("Imp", "dati", "dsx", "fru")
+DotPlot(object = pC2l_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.8", scale = FALSE) +
+    scale_colour_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+#### logFC
+
+Overall Counts with no sleep or species
+
+female - 113357
+male   - 116227
+
+
+```{r}
+clusterwise_logFC <- FetchData(object = pC2l_ish_seu, vars = c("sex", "experiment", "RNA_snn_res.8")) %>% 
+    dplyr::filter(!experiment %in% c("sleep", "species")) %>% 
+    dplyr::count(sex, RNA_snn_res.8, .drop = FALSE) %>% 
+    spread(sex, n) %>% 
+    dplyr::mutate(male_adj = male * 113357 / 116227,
+                  sex_ratio = ((female+1)/(male_adj+1)),
+    			  log_sex_ratio = log2(sex_ratio),
+    			  )
+# clusterwise_logFC
+
+logFC_metadata <- FetchData(object = pC2l_ish_seu, vars = c("sex", "RNA_snn_res.8")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(clusterwise_logFC, by = "RNA_snn_res.8")
+# logFC_metadata
+
+pC2l_ish_seu <- AddMetaData(object = pC2l_ish_seu, metadata = logFC_metadata$sex_ratio, col.name = "sex_ratio")
+pC2l_ish_seu <- AddMetaData(object = pC2l_ish_seu, metadata = logFC_metadata$log_sex_ratio, col.name = "log2FC_sex")
+```
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+
+FeaturePlot(
+		object = pC2l_ish_seu,
+		features = "sex_ratio",
+		reduction = "tsne_20pcs",
+		pt.size = 3
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(0,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+FeaturePlot(
+		object = pC2l_ish_seu,
+		features = "log2FC_sex",
+		reduction = "tsne_20pcs",
+		pt.size = 3
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-2,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+```
+
+
+
+
+
+```{r fig.width=3, fig.height=8}
+genes_to_plot <- c("sex_ratio")
+DotPlot(object = pC2l_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.8", dot.scale = 12) +
+    scale_colour_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC2l_ish_seu, vars = c("log2FC_sex","RNA_snn_res.8")) %>% 
+    select(log2FC_sex, RNA_snn_res.8) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.8, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.8, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-1,1), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC2l_ish_seu, vars = c("log2FC_sex","RNA_snn_res.8")) %>% 
+    select(log2FC_sex, RNA_snn_res.8) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.8, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.8, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC2l_ish_seu, vars = c("log2FC_sex","RNA_snn_res.8")) %>% 
+    select(log2FC_sex, RNA_snn_res.8) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.8, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.8, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-4,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+
+
+### DEG
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+plot_sex_bias_volcanoplots(clusterOI = "Achl_024", deg_df = deg_gene_filtered)
+plot_sex_bias_volcanoplots(clusterOI = "Achl_024", deg_df = deg_gene_filtered, x_lims = 2.4, y_lims = 40)
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+plot_sex_bias_volcanoplots(clusterOI = "Achl_024", deg_df = deg_gene_filtered, x_lims = 1.6, y_lims = 20, fc_cutoff = 0.4)
+```
+
+
+
+
+
+
+
+
+
+
+## pCd1
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pCd1_ish_seu, 
+		group.by = "RNA_snn_res.0.1",
+        reduction = "tsne_20pcs", 
+		pt.size = 12,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pCd1")
+DimPlot(object = pCd1_ish_seu, 
+		group.by = "RNA_snn_res.8",
+        reduction = "tsne_20pcs", 
+		pt.size = 12,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pCd1")
+```
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pCd1_ish_seu, 
+		group.by = "RNA_snn_res.6",
+        reduction = "tsne_20pcs", 
+		pt.size = 4,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pCd1")
+DimPlot(object = pCd1_ish_seu, 
+		group.by = "RNA_snn_res.6",
+        reduction = "tsne_20pcs", 
+		pt.size = 4,
+        label = FALSE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pCd1")
+```
+
+
+
+```{r}
+FetchData(object = pCd1_ish_seu, vars = "RNA_snn_res.6") %>% dplyr::count(RNA_snn_res.6) %>% arrange(n) %>% mutate(n_adj = round(n/9.8, digits = 1))
+```
+
+
+
+
+```{r}
+
+
+# job::job({
+#     library(future)
+#     # plan("multisession", workers = 8)
+#     options(future.globals.maxSize = 8*1024*1024^2)
+# 
+#     Idents(pCd1_ish_seu) <- "RNA_snn_res.6"
+#     markers_pCd1_res6 <- FindAllMarkers(object = pCd1_ish_seu, features = dplyr::setdiff(rownames(pCd1_ish_seu), iso_genes_remove), logfc.threshold = 0.5, only.pos = TRUE, verbose = TRUE)
+#     write_csv(x = markers_pCd1_res6, file = "../../proj136/analyses/markers/subclustering_pCd1ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_6__cluster_markers.csv")
+# 
+#     job::export(c(markers_pCd1_res6))
+# }, import = c(pCd1_ish_seu, iso_genes_remove))
+
+markers_pCd1_res6 <- read_csv(file = "../../proj136/analyses/markers/subclustering_pCd1ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_6__cluster_markers.csv")
+
+```
+
+
+
+```{r}
+top_markers_pCd1 <- markers_pCd1_res6 %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(avg_log2FC > 1) %>%
+    group_by(cluster) %>%
+    slice_head(n = 5) %>%
+    arrange(cluster, desc(avg_log2FC)) %>% 
+    ungroup()
+top_markers_pCd1
+```
+
+
+
+```{r fig.width=16, fig.height=6}
+genes_to_plot <- unique(top_markers_pCd1$gene)
+DotPlot(object = pCd1_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.6") +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r fig.width=16, fig.height=7}
+
+pCd1_split <- SplitObject(object = pCd1_ish_seu, split.by = "experiment")
+
+for (i in seq_along(pCd1_split)) {
+
+    genes_to_plot <- unique(top_markers_pCd1$gene)
+    plot(DotPlot(object = pCd1_split[[i]], features = genes_to_plot, group.by = "RNA_snn_res.6") +
+        scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+        ggtitle(names(pCd1_split)[[i]])
+    )
+
+}
+```
+
+
+
+
+```{r fig.width=4, fig.height=6}
+genes_to_plot <- c("Imp", "dati", "dsx", "fru")
+DotPlot(object = pCd1_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.6", scale = FALSE) +
+    scale_colour_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+#### logFC
+
+Overall Counts with no sleep or species
+
+female - 113357
+male   - 116227
+
+
+```{r}
+clusterwise_logFC <- FetchData(object = pCd1_ish_seu, vars = c("sex", "experiment", "RNA_snn_res.6")) %>% 
+    dplyr::filter(!experiment %in% c("sleep", "species")) %>% 
+    dplyr::count(sex, RNA_snn_res.6, .drop = FALSE) %>% 
+    spread(sex, n) %>% 
+    dplyr::mutate(male_adj = male * 113357 / 116227,
+                  sex_ratio = ((female+1)/(male_adj+1)),
+    			  log_sex_ratio = log2(sex_ratio),
+    			  )
+# clusterwise_logFC
+
+logFC_metadata <- FetchData(object = pCd1_ish_seu, vars = c("sex", "RNA_snn_res.6")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(clusterwise_logFC, by = "RNA_snn_res.6")
+# logFC_metadata
+
+pCd1_ish_seu <- AddMetaData(object = pCd1_ish_seu, metadata = logFC_metadata$sex_ratio, col.name = "sex_ratio")
+pCd1_ish_seu <- AddMetaData(object = pCd1_ish_seu, metadata = logFC_metadata$log_sex_ratio, col.name = "log2FC_sex")
+```
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+
+FeaturePlot(
+		object = pCd1_ish_seu,
+		features = "sex_ratio",
+		reduction = "tsne_20pcs",
+		pt.size = 4
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(0,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+FeaturePlot(
+		object = pCd1_ish_seu,
+		features = "log2FC_sex",
+		reduction = "tsne_20pcs",
+		pt.size = 4
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-2,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+```
+
+
+
+
+
+```{r fig.width=3, fig.height=8}
+genes_to_plot <- c("sex_ratio")
+DotPlot(object = pCd1_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.6", dot.scale = 12) +
+    scale_colour_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pCd1_ish_seu, vars = c("log2FC_sex","RNA_snn_res.6")) %>% 
+    select(log2FC_sex, RNA_snn_res.6) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.6, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.6, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-1,1), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pCd1_ish_seu, vars = c("log2FC_sex","RNA_snn_res.6")) %>% 
+    select(log2FC_sex, RNA_snn_res.6) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.6, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.6, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pCd1_ish_seu, vars = c("log2FC_sex","RNA_snn_res.6")) %>% 
+    select(log2FC_sex, RNA_snn_res.6) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.6, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.6, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-4,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+
+
+### DEG
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+plot_sex_bias_volcanoplots(clusterOI = "Achl_042", deg_df = deg_gene_filtered)
+plot_sex_bias_volcanoplots(clusterOI = "Achl_042", deg_df = deg_gene_filtered, x_lims = 2, y_lims = 36)
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+plot_sex_bias_volcanoplots(clusterOI = "Achl_042", deg_df = deg_gene_filtered, x_lims = 1.2, y_lims = 20, fc_cutoff = 0.4)
+```
+
+
+
+
+
+
+
+
+
+
+## pC2m
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pC2m_ish_seu, 
+		group.by = "RNA_snn_res.0.1",
+        reduction = "tsne_5pcs", 
+		pt.size = 16,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC2m")
+DimPlot(object = pC2m_ish_seu, 
+		group.by = "RNA_snn_res.4",
+        reduction = "tsne_5pcs", 
+		pt.size = 16,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC2m")
+```
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pC2m_ish_seu, 
+		group.by = "RNA_snn_res.4",
+        reduction = "tsne_5pcs", 
+		pt.size = 6,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC2m")
+DimPlot(object = pC2m_ish_seu, 
+		group.by = "RNA_snn_res.4",
+        reduction = "tsne_5pcs", 
+		pt.size = 6,
+        label = FALSE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pC2m")
+```
+
+
+
+
+```{r}
+FetchData(object = pC2m_ish_seu, vars = "RNA_snn_res.4") %>% dplyr::count(RNA_snn_res.4) %>% arrange(n) %>% mutate(n_adj = round(n/9.8, digits = 1))
+```
+
+
+
+
+```{r}
+
+# job::job({
+#     library(future)
+#     # plan("multisession", workers = 8)
+#     options(future.globals.maxSize = 8*1024*1024^2)
+# 
+#     Idents(pC2m_ish_seu) <- "RNA_snn_res.4"
+#     markers_pC2m_res4 <- FindAllMarkers(object = pC2m_ish_seu, features = dplyr::setdiff(rownames(pC2m_ish_seu), iso_genes_remove), logfc.threshold = 0.5, only.pos = TRUE, verbose = TRUE)
+#     write_csv(x = markers_pC2m_res4, file = "../../proj136/analyses/markers/subclustering_pC2mish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_4__cluster_markers.csv")
+# 
+#     job::export(c(markers_pC2m_res4))
+# }, import = c(pC2m_ish_seu, iso_genes_remove))
+
+markers_pC2m_res4 <- read_csv(file = "../../proj136/analyses/markers/subclustering_pC2mish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_4__cluster_markers.csv")
+
+```
+
+
+
+```{r}
+top_markers_pC2m <- markers_pC2m_res4 %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(avg_log2FC > 1) %>%
+    group_by(cluster) %>%
+    slice_head(n = 5) %>%
+    arrange(cluster, desc(avg_log2FC)) %>% 
+    ungroup()
+top_markers_pC2m
+```
+
+
+
+```{r fig.width=12, fig.height=4}
+genes_to_plot <- unique(top_markers_pC2m$gene)
+DotPlot(object = pC2m_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.4") +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r fig.width=12, fig.height=6}
+
+pC2m_split <- SplitObject(object = pC2m_ish_seu, split.by = "experiment")
+
+for (i in seq_along(pC2m_split)) {
+
+    genes_to_plot <- unique(top_markers_pC2m$gene)
+    plot(DotPlot(object = pC2m_split[[i]], features = genes_to_plot, group.by = "RNA_snn_res.4") +
+        scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+        ggtitle(names(pC2m_split)[[i]])
+    )
+    
+}
+```
+
+
+
+```{r fig.width=4, fig.height=4}
+genes_to_plot <- c("Imp", "dati", "dsx", "fru")
+DotPlot(object = pC2m_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.4", scale = FALSE) +
+    scale_colour_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
+#### logFC
+
+Overall Counts with no sleep or species
+
+female - 113357
+male   - 116227
+
+
+```{r}
+clusterwise_logFC <- FetchData(object = pC2m_ish_seu, vars = c("sex", "experiment", "RNA_snn_res.4")) %>% 
+    dplyr::filter(!experiment %in% c("sleep", "species")) %>% 
+    dplyr::count(sex, RNA_snn_res.4, .drop = FALSE) %>% 
+    spread(sex, n) %>% 
+    dplyr::mutate(male_adj = male * 113357 / 116227,
+                  sex_ratio = ((female+1)/(male_adj+1)),
+    			  log_sex_ratio = log2(sex_ratio),
+    			  )
+# clusterwise_logFC
+
+logFC_metadata <- FetchData(object = pC2m_ish_seu, vars = c("sex", "RNA_snn_res.4")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(clusterwise_logFC, by = "RNA_snn_res.4")
+# logFC_metadata
+
+pC2m_ish_seu <- AddMetaData(object = pC2m_ish_seu, metadata = logFC_metadata$sex_ratio, col.name = "sex_ratio")
+pC2m_ish_seu <- AddMetaData(object = pC2m_ish_seu, metadata = logFC_metadata$log_sex_ratio, col.name = "log2FC_sex")
+```
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+
+FeaturePlot(
+		object = pC2m_ish_seu,
+		features = "sex_ratio",
+		reduction = "tsne_5pcs",
+		pt.size = 6
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(0,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+FeaturePlot(
+		object = pC2m_ish_seu,
+		features = "log2FC_sex",
+		reduction = "tsne_5pcs",
+		pt.size = 6
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-2,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+```
+
+
+
+
+
+```{r fig.width=3, fig.height=4}
+genes_to_plot <- c("sex_ratio")
+DotPlot(object = pC2m_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.4", dot.scale = 12) +
+    scale_colour_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC2m_ish_seu, vars = c("log2FC_sex","RNA_snn_res.4")) %>% 
+    select(log2FC_sex, RNA_snn_res.4) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.4, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.4, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-1,1), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC2m_ish_seu, vars = c("log2FC_sex","RNA_snn_res.4")) %>% 
+    select(log2FC_sex, RNA_snn_res.4) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.4, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.4, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pC2m_ish_seu, vars = c("log2FC_sex","RNA_snn_res.4")) %>% 
+    select(log2FC_sex, RNA_snn_res.4) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.4, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.4, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-4,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+### DEG
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+plot_sex_bias_volcanoplots(clusterOI = "Achl_003", deg_df = deg_gene_filtered)
+plot_sex_bias_volcanoplots(clusterOI = "Achl_003", deg_df = deg_gene_filtered, x_lims = 2, y_lims = 6)
+```
+
+
+
+
+
+
+
+
+
+
+
+## aDN
+
+
+
+
+```{r}
+frudsxCoPos_seu@meta.data %>% colnames()
+```
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = frudsxCoPos_seu, 
+		group.by = "hemilineage",
+        reduction = "tsne_80pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = frudsxCoPos_seu, 
+		group.by = "RNA_snn_res.0.2",
+        reduction = "tsne_80pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = frudsxCoPos_seu, 
+		group.by = "RNA_snn_res.1",
+        reduction = "tsne_80pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = frudsxCoPos_seu, 
+		group.by = "RNA_snn_res.4",
+        reduction = "tsne_80pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = frudsxCoPos_seu, 
+		group.by = "RNA_snn_res.10",
+        reduction = "tsne_80pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+
+#### Clustering
+
+```{r}
+frudsxCoPos__copy__seu <- FindNeighbors(frudsxCoPos_seu,
+                       reduction = "harmony",
+                       dims = 1:80,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+# in_conda <- R.home() %>% str_detect("R4_cbrg")
+# if (in_conda) {
+#     algorithm_use <- 4
+# } else {
+    algorithm_use <- 1
+# }
+
+frudsxCoPos__copy__seu <- FindClusters(frudsxCoPos__copy__seu,
+                        algorithm = algorithm_use,
+                        resolution = c(20,50),
+                        verbose = TRUE)
+```
+
+
+```{r}
+# write_rds(x = frudsxCoPos__copy__seu, file = "../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+```
+
+
+
+
+```{r fig.width=15, fig.height=10}
+
+resolutions_to_plot <- frudsxCoPos__copy__seu@meta.data %>% colnames() %>% str_subset("RNA_snn_res")
+
+for (i in seq_along(resolutions_to_plot)) {
+ 
+    p1 <- DimPlot(object = frudsxCoPos__copy__seu, 
+    		group.by = resolutions_to_plot[[i]],
+            reduction = "tsne_80pcs", 
+    		pt.size = 2,
+            label = TRUE, 
+            label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+    plot(p1)
+
+}
+
+```
+
+
+
+
+
+
+```{r}
+Idents(frudsxCoPos__copy__seu) <- "hemilineage"
+aDN_ish_seu <- subset(x = frudsxCoPos__copy__seu, idents = c("VLPd1"))
+aDN_ish_seu
+```
+
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = aDN_ish_seu, 
+		group.by = "RNA_snn_res.20",
+        reduction = "tsne_80pcs", 
+		pt.size = 14,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("aDN")
+```
+
+
+
+
+
+```{r}
+FetchData(object = aDN_ish_seu, vars = "RNA_snn_res.20") %>% dplyr::count(RNA_snn_res.20) %>% arrange(n) %>% mutate(n_adj = round(n/9.8, digits = 1))
+```
+
+
+
+
+```{r}
+
+
+# job::job({
+#     library(future)
+#     # plan("multisession", workers = 8)
+#     options(future.globals.maxSize = 8*1024*1024^2)
+# 
+#     Idents(aDN_ish_seu) <- "RNA_snn_res.20"
+#     markers_aDN_res20 <- FindAllMarkers(object = aDN_ish_seu, features = dplyr::setdiff(rownames(aDN_ish_seu), iso_genes_remove), logfc.threshold = 0.5, only.pos = TRUE, verbose = TRUE)
+#     write_csv(x = markers_aDN_res20, file = "../../proj136/analyses/markers/subclustering_aDNish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_20__cluster_markers.csv")
+# 
+#     job::export(c(markers_aDN_res20))
+# }, import = c(aDN_ish_seu, iso_genes_remove))
+
+markers_aDN_res20 <- read_csv(file = "../../proj136/analyses/markers/subclustering_aDNish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_20__cluster_markers.csv")
+
+
+```
+
+
+
+```{r}
+top_markers_aDN <- markers_aDN_res20 %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(avg_log2FC > 1) %>%
+    group_by(cluster) %>%
+    slice_head(n = 5) %>%
+    arrange(cluster, desc(avg_log2FC)) %>% 
+    ungroup()
+top_markers_aDN
+```
+
+
+
+```{r fig.width=5, fig.height=3}
+genes_to_plot <- unique(top_markers_aDN$gene)
+DotPlot(object = aDN_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.20", dot.scale = 8) +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r fig.width=5, fig.height=4}
+
+aDN_split <- SplitObject(object = aDN_ish_seu, split.by = "experiment")
+
+for (i in seq_along(aDN_split)) {
+
+    genes_to_plot <- unique(top_markers_aDN$gene)
+    plot(DotPlot(object = aDN_split[[i]], features = genes_to_plot, group.by = "RNA_snn_res.20") +
+        scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+        ggtitle(names(aDN_split)[[i]])
+    )
+
+}
+```
+
+
+
+
+```{r fig.width=4, fig.height=3}
+genes_to_plot <- c("Imp", "dati", "dsx", "fru")
+DotPlot(object = aDN_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.20", scale = FALSE, dot.scale = 10) +
+    scale_colour_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+#### logFC
+
+Overall Counts with no sleep or species
+
+female - 113357
+male   - 116227
+
+
+```{r}
+clusterwise_logFC <- FetchData(object = aDN_ish_seu, vars = c("sex", "experiment", "RNA_snn_res.20")) %>% 
+    dplyr::filter(RNA_snn_res.20 %in% c("40", "48", "57")) %>% 
+    dplyr::filter(!experiment %in% c("sleep", "species")) %>%
+    dplyr::count(sex, RNA_snn_res.20, .drop = TRUE) %>% 
+    spread(sex, n) %>% 
+    dplyr::mutate(male_adj = male * 113357 / 116227,
+                  sex_ratio = ((female+1)/(male_adj+1)),
+    			  log_sex_ratio = log2(sex_ratio),
+    			  )
+# clusterwise_logFC
+
+logFC_metadata <- FetchData(object = aDN_ish_seu, vars = c("sex", "RNA_snn_res.20")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(clusterwise_logFC, by = "RNA_snn_res.20")
+# logFC_metadata
+
+aDN_ish_seu <- AddMetaData(object = aDN_ish_seu, metadata = logFC_metadata$sex_ratio, col.name = "sex_ratio")
+aDN_ish_seu <- AddMetaData(object = aDN_ish_seu, metadata = logFC_metadata$log_sex_ratio, col.name = "log2FC_sex")
+```
+
+
+
+
+
+
+
+
+
+```{r fig.width=3, fig.height=3}
+# genes_to_plot <- c("sex_ratio")
+# DotPlot(object = aDN_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.20", dot.scale = 12) +
+#     scale_colour_gradientn(
+#         colours = c("#00bfc4", "black", "#c77cff"), 
+#         limits = c(-1,1), oob = scales::squish
+#     ) +
+#     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = aDN_ish_seu, vars = c("log2FC_sex","RNA_snn_res.20")) %>% 
+    select(log2FC_sex, RNA_snn_res.20) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.20, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.20, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-1,1), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = aDN_ish_seu, vars = c("log2FC_sex","RNA_snn_res.20")) %>% 
+    select(log2FC_sex, RNA_snn_res.20) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.20, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.20, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = aDN_ish_seu, vars = c("log2FC_sex","RNA_snn_res.20")) %>% 
+    select(log2FC_sex, RNA_snn_res.20) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.20, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.20, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-4,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+
+
+## pCd2
+
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = frudsxCoPos__copy__seu, 
+		group.by = "hemilineage",
+        reduction = "tsne_80pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = frudsxCoPos__copy__seu, 
+		group.by = "RNA_snn_res.20",
+        reduction = "tsne_80pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+
+
+```{r}
+pCd2_cells <- FetchData(
+        object = frudsxCoPos__copy__seu, 
+        vars = c("hemilineage", "RNA_snn_res.20")) %>%
+    filter(hemilineage == "DM2_central") %>%
+    filter(RNA_snn_res.20 %in% c(10,31,35,47)) %>%
+	rownames()
+head(pCd2_cells)
+length(pCd2_cells)
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+
+p1 <- DimPlot(object = frudsxCoPos__copy__seu,
+			  cells.highlight = pCd2_cells,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_80pcs",
+        pt.size = 1,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+# p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+```{r}
+# Idents(frudsxCoPos__copy__seu) <- "hemilineage"
+# pCd2_ish_seu <- subset(x = frudsxCoPos__copy__seu, idents = c("DM2_central"))
+pCd2_ish_seu <- subset(x = frudsxCoPos__copy__seu, cells = c(pCd2_cells))
+pCd2_ish_seu
+```
+
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = pCd2_ish_seu, 
+		group.by = "RNA_snn_res.20",
+        reduction = "tsne_80pcs", 
+		pt.size = 14,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("pCd2")
+```
+
+
+
+
+
+```{r}
+FetchData(object = pCd2_ish_seu, vars = "RNA_snn_res.20") %>% dplyr::count(RNA_snn_res.20) %>% arrange(n) %>% mutate(n_adj = round(n/9.8, digits = 1))
+```
+
+
+
+
+```{r}
+
+
+# job::job({
+#     library(future)
+#     # plan("multisession", workers = 8)
+#     options(future.globals.maxSize = 8*1024*1024^2)
+# 
+#     Idents(pCd2_ish_seu) <- "RNA_snn_res.20"
+#     markers_pCd2_res20 <- FindAllMarkers(object = pCd2_ish_seu, features = dplyr::setdiff(rownames(pCd2_ish_seu), iso_genes_remove), logfc.threshold = 0.5, only.pos = TRUE, verbose = TRUE)
+#     write_csv(x = markers_pCd2_res20, file = "../../proj136/analyses/markers/subclustering_pCd2ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_20__cluster_markers.csv")
+# 
+#     job::export(c(markers_pCd2_res20))
+# }, import = c(pCd2_ish_seu, iso_genes_remove))
+
+markers_pCd2_res20 <- read_csv(file = "../../proj136/analyses/markers/subclustering_pCd2ish--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_20__cluster_markers.csv")
+
+
+```
+
+
+
+```{r}
+top_markers_pCd2 <- markers_pCd2_res20 %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(avg_log2FC > 1) %>%
+    group_by(cluster) %>%
+    slice_head(n = 5) %>%
+    arrange(cluster, desc(avg_log2FC)) %>% 
+    ungroup()
+top_markers_pCd2
+```
+
+
+
+```{r fig.width=7, fig.height=3}
+genes_to_plot <- unique(top_markers_pCd2$gene)
+DotPlot(object = pCd2_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.20", dot.scale = 8) +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+```{r fig.width=7, fig.height=4}
+
+pCd2_split <- SplitObject(object = pCd2_ish_seu, split.by = "experiment")
+
+for (i in seq_along(pCd2_split)) {
+
+    genes_to_plot <- unique(top_markers_pCd2$gene)
+    plot(DotPlot(object = pCd2_split[[i]], features = genes_to_plot, group.by = "RNA_snn_res.20") +
+        scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+        ggtitle(names(pCd2_split)[[i]])
+    )
+
+}
+```
+
+
+
+
+```{r fig.width=4, fig.height=3}
+genes_to_plot <- c("Imp", "dati", "dsx", "fru")
+DotPlot(object = pCd2_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.20", scale = FALSE, dot.scale = 10) +
+    scale_colour_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+#### logFC
+
+Overall Counts with no sleep or species
+
+female - 113357
+male   - 116227
+
+
+```{r}
+clusterwise_logFC <- FetchData(object = pCd2_ish_seu, vars = c("sex", "experiment", "RNA_snn_res.20")) %>% 
+    dplyr::filter(RNA_snn_res.20 %in% c("10", "31", "35", "47")) %>% 
+    dplyr::filter(!experiment %in% c("sleep", "species")) %>%
+    dplyr::count(sex, RNA_snn_res.20, .drop = TRUE) %>% 
+    spread(sex, n) %>% 
+    dplyr::mutate(male_adj = male * 113357 / 116227,
+                  sex_ratio = ((female+1)/(male_adj+1)),
+    			  log_sex_ratio = log2(sex_ratio),
+    			  )
+# clusterwise_logFC
+
+logFC_metadata <- FetchData(object = pCd2_ish_seu, vars = c("sex", "RNA_snn_res.20")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(clusterwise_logFC, by = "RNA_snn_res.20")
+# logFC_metadata
+
+pCd2_ish_seu <- AddMetaData(object = pCd2_ish_seu, metadata = logFC_metadata$sex_ratio, col.name = "sex_ratio")
+pCd2_ish_seu <- AddMetaData(object = pCd2_ish_seu, metadata = logFC_metadata$log_sex_ratio, col.name = "log2FC_sex")
+```
+
+
+
+
+
+
+
+
+
+```{r fig.width=3, fig.height=3}
+# genes_to_plot <- c("sex_ratio")
+# DotPlot(object = pCd2_ish_seu, features = genes_to_plot, group.by = "RNA_snn_res.20", dot.scale = 12) +
+#     scale_colour_gradientn(
+#         colours = c("#00bfc4", "black", "#c77cff"), 
+#         limits = c(-1,1), oob = scales::squish
+#     ) +
+#     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pCd2_ish_seu, vars = c("log2FC_sex","RNA_snn_res.20")) %>% 
+    select(log2FC_sex, RNA_snn_res.20) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.20, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.20, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-1,1), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pCd2_ish_seu, vars = c("log2FC_sex","RNA_snn_res.20")) %>% 
+    select(log2FC_sex, RNA_snn_res.20) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.20, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.20, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-2,2), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+```{r fig.width=10, fig.height=2}
+FetchData(object = pCd2_ish_seu, vars = c("log2FC_sex","RNA_snn_res.20")) %>% 
+    select(log2FC_sex, RNA_snn_res.20) %>% 
+    unique() %>% 
+    # ggplot(aes(x = reorder(RNA_snn_res.20, log2FC_sex, max), y = 0, fill = log2FC_sex)) +
+    ggplot(aes(x = RNA_snn_res.20, y = 0, fill = log2FC_sex)) +
+        geom_tile() +
+        theme_void() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-4,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,782 @@
+---
+title: "Allen_2025a_Analysis__Figure_3_Imp_v_dati_morphology_quantification"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(
+	dev = c("cairo_pdf"),
+	# dev = c("png", "cairo_pdf"),
+	dev.args=list(bg="transparent"),
+	fig.align = "center",
+	fig.height = 5,
+	fig.width = 8.5,
+	dpi = 100,
+	pdf.options(encoding = "ISOLatin9.enc"),
+	fig.path = paste0("../analyses/figures/", rmd_name, "-",
+	                format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+	fig.retina = 1,
+	warning = TRUE,
+	message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(colorspace)
+library(cowplot)
+```
+
+
+
+
+
+# Load data
+
+
+```{r load-dev-age}
+meta_dev_age <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_dev_age_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+meta_dev_age
+```
+
+
+```{r}
+dev_age_metadata <- FetchData(object = meta_dev_age, vars = "dev_age") %>% rownames_to_column("cell_id")
+```
+
+```{r}
+rm(meta_dev_age)
+gc()
+```
+
+
+
+```{r load-meta-brain}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+meta_cb
+```
+
+
+```{r}
+add_dev_age_metadata <- FetchData(object = meta_cb, vars = "annotation_broad_cell_type_ext_fix") %>% 
+	rownames_to_column("cell_id") %>% 
+	left_join(dev_age_metadata, by = "cell_id")
+# add_dev_age_metadata
+meta_cb <- AddMetaData(object = meta_cb, metadata = add_dev_age_metadata$dev_age, col.name = "dev_age")
+```
+
+
+```{r}
+dev_age_filtered_cells <- FetchData(object = meta_cb, vars = c("dev_age")) %>% 
+    rownames_to_column("cell_id") %>% 
+	filter(!is.na(dev_age)) %>% 
+    pull(cell_id)
+meta_cb_filtered <- subset(x = meta_cb, cells = dev_age_filtered_cells)
+meta_cb_filtered
+```
+
+
+
+
+
+# Set Embeddings and Clustering
+
+
+```{r}
+reduction_use <- commandArgs(trailingOnly=T)[4]
+if (is.na(reduction_use)) {
+	reduction_use <- "tsne_240pcs"
+}
+reduction_use
+```
+
+
+```{r}
+clustering_use <- commandArgs(trailingOnly=T)[5]
+if (is.na(clustering_use)) {
+	clustering_use <- "subcluster_clusters"
+}
+clustering_use
+```
+
+
+
+```{r}
+embeddings <- Embeddings(meta_cb_filtered, reduction = reduction_use)
+clusters <- meta_cb_filtered@meta.data[[clustering_use]]
+```
+
+
+
+# Imp v dati morphology
+
+
+
+## 1. Pairwise Distance Metrics
+Compute the average distance between all points within a cluster.
+
+```{r pairwise_distances}
+
+pairwise_distances <- clusters %>%
+  unique() %>%
+  sapply(function(cluster) {
+    points <- embeddings[clusters == cluster, ]
+    mean(dist(points)) # Mean pairwise distance
+  })
+
+pairwise_distances
+
+```
+
+
+```{r}
+cluster_by_pairwise_distances <- data.frame(subcluster_clusters = clusters %>% unique(),
+		   subcluster_clusters_pairwise_distances = pairwise_distances,
+		   log_pairwise_distances = log2(pairwise_distances))
+# cluster_by_pairwise_distances
+
+cluster_by_pairwise_distances_metadata <- FetchData(object = meta_cb_filtered, vars = "subcluster_clusters") %>% 
+	rownames_to_column("cell_id") %>% 
+	left_join(cluster_by_pairwise_distances, by = "subcluster_clusters")
+# cluster_by_pairwise_distances_metadata
+
+meta_cb_filtered <- AddMetaData(object = meta_cb_filtered, metadata = cluster_by_pairwise_distances_metadata$subcluster_clusters_pairwise_distances, col.name = "cluster_pairwise_distances")
+meta_cb_filtered <- AddMetaData(object = meta_cb_filtered, metadata = cluster_by_pairwise_distances_metadata$log_pairwise_distances, col.name = "log_pairwise_distances")
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("cluster_pairwise_distances")
+plist <- FeaturePlot(
+			object = meta_cb_filtered, 
+			reduction = reduction_use, 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 0.4, 
+			# min.cutoff = 10,
+			# max.cutoff = 50,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("cluster_pairwise_distances")
+plist <- FeaturePlot(
+			object = meta_cb_filtered, 
+			reduction = reduction_use, 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 0.4, 
+			min.cutoff = 10,
+			max.cutoff = 50,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+```
+
+
+
+
+```{r fig.width=4, fig.height=6}
+dev_age_by_cluster_pairwise_distances <- FetchData(object = meta_cb_filtered, vars = c("dev_age", "cluster_pairwise_distances"))
+
+dev_age_by_cluster_pairwise_distances %>%
+	filter(!is.na(dev_age)) %>%                                                 # filtering by dev_age also removes KCs
+	ggplot(aes(x = dev_age, y = cluster_pairwise_distances)) +
+		geom_boxplot(outlier.size = -1) +
+		theme_classic()
+	
+```
+
+
+
+```{r}
+early_cluster_pairwise_distances <- dev_age_by_cluster_pairwise_distances %>% filter(dev_age == "early_born") %>% pull(cluster_pairwise_distances)
+late_cluster_pairwise_distances <- dev_age_by_cluster_pairwise_distances %>% filter(dev_age == "late_born") %>% pull(cluster_pairwise_distances)
+```
+
+
+```{r}
+t.test(x = early_cluster_pairwise_distances, y = late_cluster_pairwise_distances, alternative = "two.sided")
+```
+
+```{r}
+wilcox.test(x = early_cluster_pairwise_distances, y = late_cluster_pairwise_distances, alternative = "two.sided")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 2. Modularity or Community Detection
+Treat the cluster as a graph, where points are nodes and edges connect nearby points.
+
+
+```{r modularity_scores}
+library(igraph)
+modularity_scores <- unique(clusters) %>%
+  sapply(function(cluster) {
+    points <- embeddings[clusters == cluster, ]
+    
+    if (nrow(points) < 2) {
+        return(NA)
+    }
+    dist_matrix <- as.matrix(dist(points))
+    radius <- 1
+    adj_matrix <- ifelse(dist_matrix < radius, 1, 0)
+    diag(adj_matrix) <- 0
+    graph <- graph_from_adjacency_matrix(adj_matrix, mode = "undirected", diag = FALSE)
+    communities <- cluster_fast_greedy(graph)
+    modularity(communities)
+})
+modularity_scores
+```
+
+
+
+
+```{r}
+cluster_by_modularity_scores <- data.frame(subcluster_clusters = clusters %>% unique(),
+		   subcluster_clusters_modularity_scores = modularity_scores
+		   )
+# cluster_by_modularity_scores
+
+cluster_by_modularity_scores_metadata <- FetchData(object = meta_cb_filtered, vars = "subcluster_clusters") %>% 
+	rownames_to_column("cell_id") %>% 
+	left_join(cluster_by_modularity_scores, by = "subcluster_clusters")
+# cluster_by_modularity_scores_metadata
+
+meta_cb_filtered <- AddMetaData(object = meta_cb_filtered, metadata = cluster_by_modularity_scores_metadata$subcluster_clusters_modularity_scores, col.name = "modularity_scores")
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("modularity_scores")
+plist <- FeaturePlot(
+			object = meta_cb_filtered, 
+			reduction = reduction_use, 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 0.4, 
+			# min.cutoff = 1,
+			# max.cutoff = 3,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("modularity_scores")
+plist <- FeaturePlot(
+			object = meta_cb_filtered, 
+			reduction = reduction_use, 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 0.4, 
+			min.cutoff = 0.7,
+			max.cutoff = 0.9,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+```
+
+
+
+
+```{r fig.width=4, fig.height=6}
+dev_age_by_modularity_scores <- FetchData(object = meta_cb_filtered, vars = c("dev_age", "modularity_scores"))
+
+dev_age_by_modularity_scores %>%
+	filter(!is.na(dev_age)) %>%                                                  # filtering by dev_age also removes KCs
+	ggplot(aes(x = dev_age, y = modularity_scores)) +
+		geom_boxplot(outlier.size = -1) +
+		# ylim(-4, 4) +
+		theme_classic()
+	
+```
+
+
+
+```{r}
+early_modularity_scores <- dev_age_by_modularity_scores %>% filter(dev_age == "early_born") %>% pull(modularity_scores)
+late_modularity_scores <- dev_age_by_modularity_scores %>% filter(dev_age == "late_born") %>% pull(modularity_scores)
+```
+
+
+```{r}
+t.test(x = early_modularity_scores, y = late_modularity_scores, alternative = "two.sided")
+```
+
+```{r}
+wilcox.test(x = early_modularity_scores, y = late_modularity_scores, alternative = "two.sided")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 3. Cluster Fragmentation
+Identify subgroups within the cluster using DBSCAN.
+
+
+```{r fragmentation_score}
+library(dbscan)
+
+fragmentation_score <- unique(clusters) %>%
+  sapply(function(cluster) {
+    points <- embeddings[clusters == cluster, ]
+    db <- dbscan::dbscan(points, eps = 0.5, minPts = 5)
+    length(unique(db$cluster))
+  })
+
+fragmentation_score
+```
+
+
+```{r}
+cluster_by_fragmentation_score <- data.frame(subcluster_clusters = clusters %>% unique(),
+		   subcluster_clusters_fragmentation_score = fragmentation_score
+		   )
+# cluster_by_fragmentation_score
+
+cluster_by_fragmentation_score_metadata <- FetchData(object = meta_cb_filtered, vars = "subcluster_clusters") %>% 
+	rownames_to_column("cell_id") %>% 
+	left_join(cluster_by_fragmentation_score, by = "subcluster_clusters")
+# cluster_by_fragmentation_score_metadata
+
+meta_cb_filtered <- AddMetaData(object = meta_cb_filtered, metadata = cluster_by_fragmentation_score_metadata$subcluster_clusters_fragmentation_score, col.name = "fragmentation_score")
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("fragmentation_score")
+plist <- FeaturePlot(
+			object = meta_cb_filtered, 
+			reduction = reduction_use, 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 0.4, 
+			# min.cutoff = 1,
+			# max.cutoff = 3,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("fragmentation_score")
+plist <- FeaturePlot(
+			object = meta_cb_filtered, 
+			reduction = reduction_use, 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 0.4, 
+			min.cutoff = 10,
+			max.cutoff = 80,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("fragmentation_score")
+plist <- FeaturePlot(
+			object = meta_cb_filtered, 
+			reduction = reduction_use, 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 0.4, 
+			min.cutoff = 10,
+			max.cutoff = 40,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+```
+
+
+```{r fig.width=4, fig.height=6}
+dev_age_by_fragmentation_score <- FetchData(object = meta_cb_filtered, vars = c("dev_age", "fragmentation_score"))
+
+dev_age_by_fragmentation_score %>%
+	filter(!is.na(dev_age)) %>%                                                  # filtering by dev_age also removes KCs
+	ggplot(aes(x = dev_age, y = fragmentation_score)) +
+		geom_boxplot(outlier.size = -1) +
+		# ylim(-4, 4) +
+		theme_classic()
+	
+```
+
+
+```{r}
+early_fragmentation_score <- dev_age_by_fragmentation_score %>% filter(dev_age == "early_born") %>% pull(fragmentation_score)
+late_fragmentation_score <- dev_age_by_fragmentation_score %>% filter(dev_age == "late_born") %>% pull(fragmentation_score)
+```
+
+
+```{r}
+t.test(x = early_fragmentation_score, y = late_fragmentation_score, alternative = "two.sided")
+```
+
+```{r}
+wilcox.test(x = early_fragmentation_score, y = late_fragmentation_score, alternative = "two.sided")
+```
+
+
+
+
+
+
+
+
+
+#### scan radii
+
+
+```{r fragmentation_score-scan}
+
+radii <- c(seq(0.1, 2, 0.1), seq(3, 10, 1))
+fragmentation_score_list <- list()
+
+for (i in seq_along(radii)) {
+	
+	message(paste0("eps = ", radii[[i]]))
+	fragmentation_score_list[[i]] <- unique(clusters) %>%
+		sapply(function(cluster) {
+			points <- embeddings[clusters == cluster, ]
+			db <- dbscan::dbscan(points, eps = radii[[i]], minPts = 5)
+			length(unique(db$cluster)) # Number of distinct subclusters
+		})
+	
+}
+
+names(fragmentation_score_list) <- paste0("eps", radii)
+
+```
+
+
+
+
+```{r}
+
+cluster_by_fragmentation_score <- data.frame(subcluster_clusters = clusters %>% unique()) %>% 
+	bind_cols(fragmentation_score_list)
+
+cluster_by_fragmentation_score_metadata <- FetchData(object = meta_cb_filtered, vars = c("subcluster_clusters", "dev_age")) %>% 
+	rownames_to_column("cell_id") %>% 
+	left_join(cluster_by_fragmentation_score, by = "subcluster_clusters")
+cluster_by_fragmentation_score_metadata
+
+```
+
+
+
+```{r}
+calculate_ci <- function(x, conf_level = 0.95) {
+	n <- length(x)
+	se <- sd(x, na.rm = TRUE) / sqrt(n)
+	margin <- qt((1 + conf_level) / 2, df = n - 1) * se
+	mean_x <- mean(x, na.rm = TRUE)
+	c(lower = mean_x - margin, upper = mean_x + margin)
+}
+```
+
+
+```{r}
+
+result <- cluster_by_fragmentation_score_metadata %>% 
+	filter(!is.na(dev_age)) %>%
+	dplyr::select(dev_age, starts_with("eps")) %>%
+	pivot_longer(cols = starts_with("eps"), names_to = "eps_column", values_to = "value") %>%
+	group_by(dev_age, eps_column) %>%
+	summarise(
+		mean = mean(value, na.rm = TRUE),
+		median = median(value, na.rm = TRUE),
+		sd = sd(value, na.rm = TRUE),
+		se = sd(value, na.rm = TRUE) / sqrt(sum(!is.na(value))),
+		cv = sd(value, na.rm = TRUE) / mean(value, na.rm = TRUE),
+		ci_lower = calculate_ci(value)[1],
+		ci_upper = calculate_ci(value)[2],
+		.groups = "drop"
+	)
+
+result
+
+```
+
+
+
+```{r}
+result %>% 
+	mutate(eps_column = eps_column %>% str_remove("eps") %>% as.numeric()) %>% 
+	ggplot(aes(x = eps_column, y = mean, color = dev_age, fill = dev_age)) +
+		geom_point() +
+		geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper)) +
+		labs(title = "Varying eps affects on fragmentation score",
+			 y = "mean fragmentation score",
+			 x = "eps") +
+		theme_classic()
+```
+
+
+
+#### scan minpts
+
+
+```{r fragmentation_score-scan-2}
+
+min_pts <- c(seq(1, 20, 1))
+fragmentation_score_list <- list()
+
+for (i in seq_along(min_pts)) {
+	
+	message(paste0("minPts = ", min_pts[[i]]))
+	fragmentation_score_list[[i]] <- unique(clusters) %>%
+		sapply(function(cluster) {
+			points <- embeddings[clusters == cluster, ]
+			db <- dbscan::dbscan(points, eps = 0.5, minPts = min_pts[[i]])
+			length(unique(db$cluster)) # Number of distinct subclusters
+		})
+	
+}
+
+names(fragmentation_score_list) <- paste0("minPts", min_pts)
+
+```
+
+
+
+
+```{r}
+
+cluster_by_fragmentation_score <- data.frame(subcluster_clusters = clusters %>% unique()) %>% 
+	bind_cols(fragmentation_score_list)
+
+cluster_by_fragmentation_score_metadata <- FetchData(object = meta_cb_filtered, vars = c("subcluster_clusters", "dev_age")) %>% 
+	rownames_to_column("cell_id") %>% 
+	left_join(cluster_by_fragmentation_score, by = "subcluster_clusters")
+cluster_by_fragmentation_score_metadata
+
+```
+
+
+
+```{r}
+calculate_ci <- function(x, conf_level = 0.95) {
+	n <- length(x)
+	se <- sd(x, na.rm = TRUE) / sqrt(n)
+	margin <- qt((1 + conf_level) / 2, df = n - 1) * se
+	mean_x <- mean(x, na.rm = TRUE)
+	c(lower = mean_x - margin, upper = mean_x + margin)
+}
+```
+
+
+```{r}
+
+result <- cluster_by_fragmentation_score_metadata %>% 
+	filter(!is.na(dev_age)) %>%
+	dplyr::select(dev_age, starts_with("minPts")) %>%
+	pivot_longer(cols = starts_with("minPts"), names_to = "minPts_column", values_to = "value") %>%
+	group_by(dev_age, minPts_column) %>%
+	summarise(
+		mean = mean(value, na.rm = TRUE),
+		median = median(value, na.rm = TRUE),
+		sd = sd(value, na.rm = TRUE),
+		se = sd(value, na.rm = TRUE) / sqrt(sum(!is.na(value))),
+		cv = sd(value, na.rm = TRUE) / mean(value, na.rm = TRUE),
+		ci_lower = calculate_ci(value)[1],
+		ci_upper = calculate_ci(value)[2],
+		.groups = "drop"
+	)
+
+result
+
+```
+
+
+```{r}
+result %>% 
+	mutate(minPts_column = minPts_column %>% str_remove("minPts") %>% as.numeric()) %>% 
+	ggplot(aes(x = minPts_column, y = mean, color = dev_age, fill = dev_age)) +
+		geom_point() +
+		geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper)) +
+		labs(title = "Varying minPts affects on fragmentation score",
+			 y = "mean fragmentation score",
+			 x = "minPts") +
+		theme_classic()
+```
+
+
+
+
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
+

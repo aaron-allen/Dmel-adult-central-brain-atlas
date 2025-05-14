@@ -1,0 +1,262 @@
+---
+title: "Allen_2025a_Analysis__Figure_4_subcluster_all_subset_split_clusters"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+## Cluster_resolution = `r commandArgs(trailingOnly = TRUE)[3]`
+
+
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load Data
+
+```{r set-cluster}
+cluster_resolution <- "subcluster_clusters"
+cluster_dot_resolution <-"subcluster_clusters"
+```
+
+
+
+```{r load-data}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+DefaultAssay(meta_cb) <- "RNA"
+Idents(meta_cb) <- cluster_dot_resolution
+meta_cb
+```
+
+
+## Create directories
+
+
+
+```{r make-dir}
+dir.create(paste0("../analyses/rds_files/subclustering/", cluster_resolution, "/lists/"), recursive = TRUE, showWarnings = FALSE)
+dir.create(paste0("../analyses/rds_files/subclustering/", cluster_resolution, "/integrated/"), recursive = TRUE, showWarnings = FALSE)
+dir.create(paste0("../analyses/markers/subclustering/", cluster_resolution, "/cluster_markers/"), recursive = TRUE, showWarnings = FALSE)
+```
+
+
+# Plots
+
+```{r plot-res, fig.width=14, fig.height=14}
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = cluster_dot_resolution,
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+```
+
+
+
+
+
+
+## all
+
+
+```{r}
+all_clusters <- meta_cb@meta.data[[cluster_dot_resolution]] %>% unique() %>% sort()
+all_clusters
+```
+
+
+```{r subset-and-split-2}
+
+cell_id_by_cluster <- FetchData(object = meta_cb, vars = cluster_dot_resolution) %>% rownames_to_column("cell_id")
+
+for (i in seq_along(all_clusters)) {
+    
+    subclustering_cluster_cells <- cell_id_by_cluster %>% 
+    	filter(!!sym(cluster_dot_resolution) == all_clusters[[i]]) %>% 
+    	pull(cell_id)
+    
+    subclustering_cluster_sub <- subset(x = meta_cb, cells = subclustering_cluster_cells)
+    subclustering_cluster_list <- SplitObject(object = subclustering_cluster_sub, split.by = "experiment")
+
+    subclustering_cluster_list_clean <- list()
+    for (ii in seq_along(subclustering_cluster_list)) {
+        counts_to_use <- "RNA"
+        subclustering_cluster_list_clean[[ii]] <- CreateSeuratObject(counts = subclustering_cluster_list[[ii]]@assays[[counts_to_use]])
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$orig.ident, col.name = "orig.ident")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$experiment, col.name = "experiment")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$tissue, col.name = "tissue")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$cell_nuclei, col.name = "cell_nuclei")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$availability, col.name = "availability")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$sex, col.name = "sex")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$percent_mt, col.name = "percent_mt")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$percent_rRNA, col.name = "percent_rRNA")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$percent_rProt, col.name = "percent_rProt")
+    	subclustering_cluster_list_clean[[ii]] <- AddMetaData(object = subclustering_cluster_list_clean[[ii]], metadata = subclustering_cluster_list[[ii]]$percent_hsp, col.name = "percent_hsp")
+    }
+    names(subclustering_cluster_list_clean) <- names(subclustering_cluster_list)
+
+    write_rds(x = subclustering_cluster_list_clean, 
+              file = paste0("../analyses/rds_files/subclustering/", cluster_resolution, "/lists/subclustering_", cluster_resolution, "__cluster_", all_clusters[[i]], "_list.rds")
+    		  )
+
+}
+
+
+```
+
+
+
+
+
+
+
+
+```{r plot-highlighted-clusters-2, fig.width=14, fig.height=14}
+
+for (i in seq_along(all_clusters)) {
+    
+    message(paste0("Plotting cluster ", sprintf("%03d", as.numeric(as.character(all_clusters[[i]])))))
+    subclustering_cluster_cells <- cell_id_by_cluster %>% 
+    	filter(!!sym(cluster_dot_resolution) == all_clusters[[i]]) %>% 
+    	pull(cell_id)
+
+
+    p1 <- DimPlot(object = meta_cb,
+    			  cells.highlight = subclustering_cluster_cells,
+    			  sizes.highlight = 0.4, 
+    			  cols.highlight = "black", 
+    			  cols = "lightsteelblue2",
+            reduction = "tsne_240pcs",
+            pt.size = 0.4,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE) +
+        NoAxes() +
+        NoLegend() +
+        coord_fixed() +
+        ggtitle(paste0(cluster_dot_resolution, ", cluster ",
+                       sprintf("%03d", as.numeric(as.character(all_clusters[[i]])))
+                       )
+                )
+    
+    p1[[1]]$layers[[1]]$aes_params$alpha = .1
+    plot(p1)
+ 
+    Sys.sleep(1)
+       
+}
+
+
+```
+
+
+
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```
+
+

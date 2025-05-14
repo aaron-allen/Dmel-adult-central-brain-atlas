@@ -1,0 +1,868 @@
+---
+title: "Sexed_Paper_1_Analysis__Figure_S4_fruitless_lookup_figure"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                      				    "jobid_", commandArgs(trailingOnly = TRUE)[2], "-",
+                                        "date_", format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Load Data
+
+
+
+
+```{r load-meta-brain}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+meta_cb
+```
+
+
+```{r}
+meta_cb@meta.data %>% colnames()
+```
+
+
+
+
+
+```{r}
+
+# fru_seu <- read_rds(file = "../../proj136/analyses/rds_files/subclustering_fru__seu--round2--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+fru_seu <- read_rds(file = "../../proj136/analyses/rds_files/subclustering_fru__seu--round2--500VarGene--NoReg--Harmony_ori_cell.rds")
+fru_seu
+
+```
+
+
+```{r}
+fru_seu@meta.data %>% colnames()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# Plots
+
+
+
+
+
+```{r fig.width=20, fig.height=12}
+DimPlot(
+        object = fru_seu, 
+        group.by = "RNA_snn_res.8", 
+        pt.size = 3, 
+        reduction = "tsne_70pcs",
+        label = TRUE,
+        raster = TRUE,
+        raster.dpi = c(1024,1024)
+    ) +
+    NoLegend() +
+    coord_fixed() +
+    scale_colour_discrete_qualitative(palette = "Set 2")
+```
+
+
+
+
+```{r}
+all_metadata <- meta_cb@meta.data %>% 
+    as.data.frame() %>% 
+    rownames_to_column("cell_id")
+all_metadata
+```
+
+
+
+```{r}
+fru_metadata <- fru_seu@meta.data %>% 
+    as.data.frame() %>% 
+    rownames_to_column("cell_id")
+fru_metadata
+```
+
+
+```{r}
+add_all_metadata_to_fru <- fru_metadata %>% 
+    select(cell_id) %>% 
+    left_join(all_metadata, by = "cell_id")
+add_all_metadata_to_fru
+```
+
+
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("lab", "pb")
+plist <- FeaturePlot(
+			object = meta_cb, 
+			reduction = "tsne_240pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 0.4, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]] + NoLegend())
+}
+
+p1 <- DimPlot(
+        object = meta_cb, 
+        group.by = "neuromere", 
+		cols = c("#79A2D4", "#D3A348"),
+        pt.size = 0.4, 
+        reduction = "tsne_240pcs",
+        label = FALSE,
+        raster = FALSE,
+        raster.dpi = c(1024,1024)
+    ) +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+```{r}
+rm(meta_cb)
+gc()
+```
+
+
+
+
+
+```{r}
+fru_seu <- AddMetaData(object = fru_seu, metadata = add_all_metadata_to_fru$neuromere, col.name = "neuromere")
+fru_seu <- AddMetaData(object = fru_seu, metadata = add_all_metadata_to_fru$nsc_type, col.name = "nsc_type")
+```
+
+
+
+
+```{r fig.width=20, fig.height=12}
+DimPlot(
+        object = fru_seu, 
+        group.by = "neuromere", 
+		cols = c("#79A2D4", "#D3A348"),
+        pt.size = 3, 
+        reduction = "tsne_70pcs",
+        label = FALSE,
+        raster = TRUE,
+        raster.dpi = c(1024,1024)
+    ) +
+    NoLegend() +
+    coord_fixed()
+
+
+DimPlot(
+        object = fru_seu, 
+        group.by = "nsc_type", 
+		cols = c("#79A2D4", "#D3A348"),
+        pt.size = 3, 
+        reduction = "tsne_70pcs",
+        label = FALSE,
+        raster = TRUE,
+        raster.dpi = c(1024,1024)
+    ) +
+    NoLegend() +
+    coord_fixed()
+```
+
+
+
+
+```{r fig.width=20, fig.height=12}
+DimPlot(
+        object = fru_seu, 
+        group.by = "neuromere", 
+		cols = c("#79A2D4", "#D3A348"),
+        pt.size = 3, 
+        reduction = "tsne_70pcs",
+        label = FALSE,
+        raster = TRUE,
+        raster.dpi = c(1024,1024)
+    ) +
+    NoLegend() +
+    coord_fixed()
+
+
+DimPlot(
+        object = fru_seu, 
+        group.by = "nsc_type", 
+		cols = c("#8AACEB", "#ABB150"),
+        pt.size = 3, 
+        reduction = "tsne_70pcs",
+        label = FALSE,
+        raster = TRUE,
+        raster.dpi = c(1024,1024)
+    ) +
+    NoLegend() +
+    coord_fixed()
+```
+
+
+
+
+```{r fig.width=20, fig.height=12}
+DimPlot(
+        object = fru_seu, 
+        group.by = "neuromere", 
+		cols = c("lightsteelblue2", "grey20"),
+        pt.size = 3, 
+        reduction = "tsne_70pcs",
+		order = TRUE,
+        label = FALSE,
+        raster = TRUE,
+        raster.dpi = c(1024,1024)
+    ) +
+    NoLegend() +
+    coord_fixed()
+
+
+DimPlot(
+        object = fru_seu, 
+        group.by = "nsc_type", 
+		cols = c("lightsteelblue2", "grey20"),
+        pt.size = 3, 
+        reduction = "tsne_70pcs",
+		order = TRUE,
+        label = FALSE,
+        raster = TRUE,
+        raster.dpi = c(1024,1024)
+    ) +
+    NoLegend() +
+    coord_fixed()
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("Imp", "dati")
+plist <- FeaturePlot(
+			object = fru_seu, 
+			reduction = "tsne_70pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 1.4, 
+			min.cutoff = 1,
+			max.cutoff = 4,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]] + NoLegend())
+}
+
+```
+
+
+
+
+
+
+
+
+### sex ratio
+
+```{r}
+log_sex_cluster_metadata <- FetchData(object = fru_seu, vars = c("sex", "experiment", "RNA_snn_res.8")) %>% 
+    filter(!experiment %in% c("sleep", "species")) %>% 
+    dplyr::count(sex, RNA_snn_res.8) %>% 
+    spread(sex, n) %>% 
+    dplyr::mutate(sex_ratio = (female/male),
+    			  log_sex_ratio = log2(female/male),
+    			  )
+# log_sex_cluster_metadata
+
+log_sex_cell_metadata <- FetchData(object = fru_seu, vars = c("sex", "experiment", "RNA_snn_res.8")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(log_sex_cluster_metadata, by = "RNA_snn_res.8")
+# log_sex_cell_metadata
+
+fru_seu <- AddMetaData(object = fru_seu, metadata = log_sex_cell_metadata$log_sex_ratio, col.name = "log_sex_ratio")
+fru_seu <- AddMetaData(object = fru_seu, metadata = log_sex_cell_metadata$sex_ratio, col.name = "sex_ratio")
+```
+
+```{r}
+log_sex_cluster_metadata$sex_ratio %>% max()
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+
+FeaturePlot(
+		object = fru_seu,
+		features = "sex_ratio",
+		reduction = "tsne_70pcs",
+		pt.size = 1.4
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(0,2), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+FeaturePlot(
+		object = fru_seu,
+		features = "log_sex_ratio",
+		reduction = "tsne_70pcs",
+		pt.size = 1.4
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+add_all_metadata_to_fru <- add_all_metadata_to_fru %>% 
+	mutate(neuromere_binary = if_else(neuromere == "cerebrum", 0, 1),
+		   nsc_type_binary = if_else(nsc_type == "type_I", 0, 1)
+		   )
+add_all_metadata_to_fru
+```
+
+
+```{r}
+fru_seu <- AddMetaData(object = fru_seu, metadata = add_all_metadata_to_fru$neuromere_binary, col.name = "neuromere_binary")
+fru_seu <- AddMetaData(object = fru_seu, metadata = add_all_metadata_to_fru$nsc_type_binary, col.name = "nsc_type_binary")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# dotplot
+
+
+
+
+```{r fig.width=4, fig.height=12}
+DotPlot(
+		object = fru_seu, 
+		features = c("neuromere_binary", "nsc_type_binary", "sex_ratio", "Imp", "dati", "VAChT", "VGlut", "Gad1")
+	) +
+	scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+
+```{r fig.width=4, fig.height=12}
+DotPlot(
+		object = fru_seu, 
+		features = c("neuromere_binary", "nsc_type_binary", "sex_ratio", "Imp", "dati", "VAChT", "VGlut", "Gad1")
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+
+
+
+
+
+
+
+
+
+```{r fig.width=20, fig.height=3}
+DotPlot(
+		object = fru_seu, 
+		features = c("neuromere_binary", "nsc_type_binary", "sex_ratio", "Imp", "dati", "VAChT", "VGlut", "Gad1")
+	) +
+	scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+```
+
+
+```{r fig.width=20, fig.height=3}
+DotPlot(
+		object = fru_seu, 
+		features = c("neuromere_binary", "nsc_type_binary", "sex_ratio", "Imp", "dati", "VAChT", "VGlut", "Gad1")
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+```
+
+
+
+
+```{r fig.width=20, fig.height=3}
+DotPlot(
+		object = fru_seu, cluster.idents = TRUE,
+		features = c("neuromere_binary", "nsc_type_binary", "sex_ratio", "Imp", "dati", "VAChT", "VGlut", "Gad1")
+	) +
+	scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+```
+
+
+
+
+
+```{r fig.width=20, fig.height=3}
+DotPlot(
+		object = fru_seu, cluster.idents = TRUE,
+		features = c("neuromere_binary", "nsc_type_binary", "sex_ratio", "Imp", "dati", "VAChT", "VGlut", "Gad1")
+	) +
+    scale_color_gradientn(
+        colours = c("#00bfc4", "black", "#c77cff"), 
+        limits = c(-1,1), oob = scales::squish
+    ) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+```
+
+
+
+# fru isoforms
+
+```{r}
+fru_seu %>% rownames() %>% str_subset("fru") %>% cat(sep = '", "')
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=20, fig.height=3}
+
+genes <- c("fruPr1Ex1", "fruPr1Ex2", "fruCOM", "fruD2", "fruA", "fruB", "fruC")
+
+DotPlot(
+		object = fru_seu, 
+		scale = FALSE,
+		cluster.idents = FALSE,
+		features = rev(genes)
+	) +
+	scale_colour_continuous_sequential(palette = ("Inferno"), rev = FALSE, limits = c(0,4), oob = scales::squish) + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+DotPlot(
+		object = fru_seu, 
+		scale = FALSE,
+		cluster.idents = FALSE,
+		features = rev(genes)
+	) +
+	scale_colour_continuous_sequential(palette = "Inferno", rev = TRUE, limits = c(0,4), oob = scales::squish) + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+DotPlot(
+		object = fru_seu, 
+		scale = FALSE,
+		cluster.idents = TRUE,
+		features = rev(genes)
+	) +
+	scale_colour_continuous_sequential(palette = ("Inferno"), rev = FALSE, limits = c(0,4), oob = scales::squish) + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+DotPlot(
+		object = fru_seu, 
+		scale = FALSE,
+		cluster.idents = TRUE,
+		features = rev(genes)
+	) +
+	scale_colour_continuous_sequential(palette = "Inferno", rev = TRUE, limits = c(0,4), oob = scales::squish) + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=30, fig.height=3}
+
+genes <- c("fruPr1Ex1", "fruPr1Ex2", "fruCOM", "fruD2", "fruA", "fruB", "fruC")
+
+DotPlot(
+		object = meta_cb, 
+		group.by = "subcluster_clusters",
+		scale = FALSE,
+		cluster.idents = FALSE,
+		features = rev(genes)
+	) +
+	scale_colour_continuous_sequential(palette = ("Inferno"), rev = FALSE, limits = c(0,4), oob = scales::squish) + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	coord_flip()
+
+```
+
+
+
+
+
+
+
+
+
+
+# Markers
+
+
+
+
+```{r}
+# write_csv(x = fru_cluster_markers, file = "../../proj136/analyses/markers/subclustering_fru_seu--round2--500VarGene--NoReg--Harmony_ori_cell--RNA_snn_res_8__cluster_markers.csv")
+fru_cluster_markers <- read_csv("../../proj136/analyses/markers/subclustering_fru_seu--round2--500VarGene--NoReg--Harmony_ori_cell--RNA_snn_res_8__cluster_markers.csv")
+```
+
+
+
+
+
+
+# TFs
+
+
+```{r}
+tfs_FBgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_allTFs.txt")
+tfs_FBgn
+```
+
+```{r}
+FBgn_to_symbol <- read_csv("../../../aallen/genomes/dmel/FBgn_to_symbol.csv")
+FBgn_to_symbol
+```
+
+```{r}
+tfs_symbol <- FBgn_to_symbol %>% 
+	select(FBgn, gene_symbol_r6.30) %>% 
+	filter(FBgn %in% tfs_FBgn$FBgn) %>% 
+	# select(gene_symbol_r6.30) %>% 
+	dplyr::rename("gene_symbol" = "gene_symbol_r6.30")
+tfs_symbol
+```
+
+
+
+```{r}
+sig_tfs <- fru_cluster_markers %>% 
+	filter(p_val_adj < 0.05) %>% 
+	filter(avg_log2FC > 1) %>% 
+	filter(gene %in% tfs_symbol$gene_symbol) %>% 
+	pull(gene) %>% 
+	unique()
+sig_tfs
+```
+
+
+
+```{r}
+temp <- FetchData(object = fru_seu, vars = c("RNA_snn_res.8", sig_tfs), slot = "data") %>% 
+	gather("gene", "expression", -RNA_snn_res.8) %>% 
+	group_by(RNA_snn_res.8, gene) %>%
+	summarise(avg_exp = mean(expression))
+temp
+```
+
+
+```{r}
+tf_cv <- temp %>% 
+	group_by(gene) %>% 
+	summarise(mean = mean(avg_exp),
+			  sd = sd(avg_exp),
+			  cv = sd/mean)
+tf_cv	
+```
+
+
+```{r}
+tfs_high_cv <- tf_cv %>%
+	filter(cv > 2) %>% 
+	pull(gene)
+tfs_high_cv
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+genes <- c("Abd-B")
+plist <- FeaturePlot(
+			object = fru_seu, 
+			reduction = "tsne_70pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 1.4, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]] + NoLegend())
+}
+
+```
+
+
+
+
+```{r}
+sig_tfs_high_cv <- fru_cluster_markers %>% 
+	filter(p_val_adj < 0.05) %>% 
+	filter(avg_log2FC > 1) %>% 
+	filter(gene %in% tfs_high_cv) %>% 
+	pull(gene) %>% 
+	unique() 
+sig_tfs_high_cv
+```
+
+```{r}
+sig_tfs_high_cv %>% rev()
+```
+
+
+
+```{r fig.width=22, fig.height=12}
+DotPlot(object = fru_seu, 
+		features = sig_tfs_high_cv, 
+		group.by = "RNA_snn_res.8",
+		scale = TRUE,
+		scale.min = 0,
+		scale.max = 100,
+		dot.min = 0,
+		col.min = -2,
+		col.max = 2) + 
+	scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+
+
+
+
+
+
+# nps
+
+
+```{r}
+nps_symbol <- read_tsv("../../../aallen/gene_lists/gene_sets/neuropeptides.tsv", col_names = "gene_symbol")
+nps_symbol
+```
+
+
+```{r}
+sig_nps <- fru_cluster_markers %>% 
+	filter(p_val_adj < 0.05) %>% 
+	filter(avg_log2FC > 1) %>% 
+	filter(gene %in% nps_symbol$gene_symbol) %>% 
+	pull(gene) %>% 
+	unique()
+sig_nps
+```
+
+
+```{r fig.width=7, fig.height=12}
+DotPlot(object = fru_seu, 
+		features = sig_nps, 
+		group.by = "RNA_snn_res.8",
+		scale = TRUE,
+		scale.min = 0,
+		scale.max = 100,
+		dot.min = 0,
+		col.min = -2,
+		col.max = 2) + 
+	scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+
+```{r fig.width=7, fig.height=12}
+DotPlot(object = fru_seu, 
+		features = sort(sig_nps), 
+		group.by = "RNA_snn_res.8",
+		scale = TRUE,
+		scale.min = 0,
+		scale.max = 100,
+		dot.min = 0,
+		col.min = -2,
+		col.max = 2) + 
+	scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+
+
+
+
+```{r}
+write_rds(x = fru_seu, file = "../../proj136/analyses/rds_files/subclustering_fru__seu--round2--500VarGene--NoReg--Harmony_ori_cell.rds")
+```
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```
+
+
+
+
+
+
+
+

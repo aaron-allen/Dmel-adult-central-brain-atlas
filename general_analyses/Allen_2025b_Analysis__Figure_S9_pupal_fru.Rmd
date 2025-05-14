@@ -1,0 +1,975 @@
+---
+title: "Allen_2025b_Analysis__Figure_S9_pupal_fru"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+## Parameters
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load the data
+
+
+```{r}
+p40 <- read_rds(file = "../../proj104/analyses/rds_files/p40_pupa_alevin_LogNormalize_harmony_integrated_seurat_annotated.rds")
+p40
+```
+
+
+```{r}
+tsne_embeddings <- read_rds(file = "../../proj104/analyses/rds_files/p40_pupa_alevin_LogNormalize_harmony_integrated_tsne_embeddings_.rds")
+tsne_embeddings
+```
+
+
+
+
+
+## Add tSNE to main object
+
+```{r add-tsne}
+tsnes <- names(tsne_embeddings@reductions) %>% str_subset("tsne") %>% str_subset("pcs")
+for (tsne in tsnes) {
+    p40@reductions[[tsne]] <- tsne_embeddings@reductions[[tsne]]
+}
+p40@reductions[["tsne"]] <- tsne_embeddings@reductions[["tsne"]]
+write_rds(x = p40, file = "../../proj104/analyses/rds_files/p40_pupa_alevin_LogNormalize_harmony_integrated_seurat_annotated.rds")
+rm(tsne_embeddings)
+gc()
+```
+
+```{r}
+p40
+```
+
+
+
+
+
+
+
+
+# Plots
+
+```{r fig.width = 20, fig.height = 10}
+DimPlot(object = p40, 
+        group.by = "RNA_snn_res.10", 
+        pt.size = 0.2, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+DimPlot(object = p40, 
+        group.by = "RNA_snn_res.10", 
+        pt.size = 0.2, 
+        raster = FALSE, 
+        reduction = "tsne_90pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+
+
+
+```{r fig.width = 20, fig.height = 10}
+DimPlot(object = p40, 
+        group.by = "RNA_snn_res.10", 
+        pt.size = 0.2, 
+        raster = FALSE, 
+        reduction = "umap_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+DimPlot(object = p40, 
+        group.by = "RNA_snn_res.10", 
+        pt.size = 0.2, 
+        raster = FALSE, 
+        reduction = "umap_90pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+
+
+```{r}
+FetchData(object = p40, vars = c("experiment","RNA_snn_res.10")) %>% 
+    dplyr::count(experiment,RNA_snn_res.10) %>% 
+    group_by(RNA_snn_res.10) %>%
+    arrange(RNA_snn_res.10) %>% 
+    mutate(proportion = n / sum(n)) 
+```
+
+
+
+```{r}
+FetchData(object = p40, vars = c("experiment")) %>% 
+    dplyr::count(experiment)
+```
+
+
+
+```{r fig.width=14, fig.height=6}
+my_resolution <- "RNA_snn_res.10"
+
+experiment_n <- FetchData(object = p40, vars = c("experiment")) %>% 
+    dplyr::count(experiment)
+df <- FetchData(object = p40, vars = c("experiment",my_resolution)) %>% 
+    dplyr::rename("clusters" = my_resolution) %>% 
+    dplyr::count(experiment,clusters, .drop = FALSE) %>% 
+    group_by(clusters) %>%
+    mutate(n_adj = n,
+           proportion = n_adj / sum(n_adj))
+    # mutate(n_adj = if_else(experiment == "brain", (n*53931/(53931+26139)), n),
+    #        proportion = n_adj / sum(n_adj)) 
+new_order <- df %>% 
+    dplyr::filter(experiment == "ol_P40") %>% 
+    dplyr::arrange(proportion) %>% 
+    dplyr::pull(clusters)
+df %>% 
+    mutate(clusters = factor(clusters, levels = new_order)) %>%
+    ggplot(aes(x = clusters, y = proportion, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill", width = 1) +
+        geom_hline(yintercept = 0.333, colour = "white") +
+        geom_hline(yintercept = 0.667, colour = "white")
+```
+
+
+
+
+```{r fig.width=14, fig.height=6}
+my_resolution <- "RNA_snn_res.10"
+
+experiment_n <- FetchData(object = p40, vars = c("experiment")) %>% 
+    dplyr::count(experiment)
+df <- FetchData(object = p40, vars = c("experiment",my_resolution)) %>% 
+    dplyr::rename("clusters" = my_resolution) %>%
+    dplyr::filter(experiment != "arb_fruGal4") %>% 
+    dplyr::count(experiment,clusters, .drop = FALSE) %>% 
+    group_by(clusters) %>%
+    mutate(n_adj = n,
+           proportion = n_adj / sum(n_adj))
+    # mutate(n_adj = if_else(experiment == "brain", (n*53931/(53931+26139)), n),
+    #        proportion = n_adj / sum(n_adj)) 
+new_order <- df %>% 
+    dplyr::filter(experiment == "ol_P40") %>% 
+    dplyr::arrange(proportion) %>% 
+    dplyr::pull(clusters)
+df %>% 
+    mutate(clusters = factor(clusters, levels = new_order)) %>%
+    ggplot(aes(x = clusters, y = proportion, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill", width = 1) +
+        geom_hline(yintercept = 0.4, colour = "white") +
+        geom_hline(yintercept = 0.6, colour = "white")
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+central_brain_clusters <- df %>% 
+    filter(experiment == "arb_48hr") %>% 
+    filter(proportion > 0.4) %>% 
+    pull(clusters) %>%
+    droplevels() %>%
+    sort() %>% 
+    as.character()
+
+Idents(p40) <- p40$RNA_snn_res.10
+central_brain_cells <- WhichCells(object = p40, idents = central_brain_clusters)
+
+DimPlot(object = p40, 
+        cells.highlight = central_brain_cells, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+
+
+```{r fig.width = 20, fig.height = 10}
+central_brain_clusters <- df %>% 
+    filter(experiment == "arb_48hr") %>% 
+    filter(proportion > 0.6) %>% 
+    pull(clusters) %>%
+    droplevels() %>%
+    sort() %>% 
+    as.character()
+
+Idents(p40) <- p40$RNA_snn_res.10
+central_brain_cells <- WhichCells(object = p40, idents = central_brain_clusters)
+
+DimPlot(object = p40, 
+        cells.highlight = central_brain_cells, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+central_brain_clusters <- df %>% 
+    filter(experiment == "arb_48hr") %>% 
+    filter(proportion > 0.75) %>% 
+    pull(clusters) %>%
+    droplevels() %>%
+    sort() %>% 
+    as.character()
+
+Idents(p40) <- p40$RNA_snn_res.10
+central_brain_cells <- WhichCells(object = p40, idents = central_brain_clusters)
+
+DimPlot(object = p40, 
+        cells.highlight = central_brain_cells, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+
+
+
+
+
+```{r fig.width = 20, fig.height = 10}
+DimPlot(object = p40, 
+        group.by = "RNA_snn_res.2", 
+        pt.size = 0.2, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs",
+        label = TRUE) + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+```{r}
+ol_cluster_enrichment <- FetchData(object = p40, vars = c("experiment", "RNA_snn_res.2")) %>% 
+    dplyr::filter(experiment != "arb_fruGal4") %>% 
+    dplyr::count(experiment, RNA_snn_res.2, .drop = FALSE) %>% 
+    spread(experiment, n) %>% 
+    mutate(log2_ol_vs_wb = log2((ol_P40+1)/(arb_48hr+1)))
+ol_cluster_enrichment
+```
+
+```{r}
+ol_enrichment <- FetchData(object = p40, vars = "RNA_snn_res.2") %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(ol_cluster_enrichment, by = "RNA_snn_res.2")
+ol_enrichment
+```
+
+```{r}
+p40 <- AddMetaData(object = p40, metadata = ol_enrichment$log2_ol_vs_wb, col.name = "log2_ol_vs_wb")
+```
+
+```{r fig.width = 20, fig.height = 10}
+FeaturePlot(object = p40, 
+            features = "log2_ol_vs_wb",
+            min.cutoff = -2,
+            max.cutoff = 2,
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs") + 
+    scale_color_continuous_diverging(palette = "Vik") +
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("VAChT", "VGlut", "Gad1"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("Antp", "Ubx", "Abd-B"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("ey", "Poxn", "Vmat"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("Vmat", "DAT", "Fer2"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("acj6", "Drgx", "ct"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("ap", "scro", "bi"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("Imp", "br", "dati"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("Imp", "mamo", "pros"),
+            min.cutoff = 1,
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("repo", "Gs2", "alrm"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+
+```{r fig.width = 20, fig.height = 10}
+DimPlot(object = p40, 
+        group.by = "RNA_snn_res.6", 
+        pt.size = 0.2, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs",
+        label = TRUE) + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+```{r fig.width=20, fig.height=3}
+avg_exp <- AverageExpression(object = p40 , features = c("ap", "scro", "Drgx"), assays = "RNA", group.by = "RNA_snn_res.6", slot = "scale.data")
+pheatmap(avg_exp$RNA,
+         breaks = seq(-1,1,0.05),
+         color = diverging_hcl(40, "Blue-Red 3"),
+         border_color = NA,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         angle_col = 90)
+```
+
+
+```{r}
+ol_clusters <- avg_exp$RNA %>% 
+    as.data.frame() %>% 
+    rownames_to_column("gene") %>% 
+    gather("cluster", "scaled_exp", -gene) %>% 
+    filter(scaled_exp > 0.4)
+ol_clusters
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+Idents(p40) <- p40$RNA_snn_res.6
+ol_cells <- WhichCells(object = p40, idents = ol_clusters$cluster)
+
+DimPlot(object = p40, 
+        cells.highlight = ol_cells, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+```{r fig.width = 20, fig.height = 10}
+plist <- list()
+plist[["ol_genes"]] <- DimPlot(object = p40, 
+        cells.highlight = ol_cells, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoLegend() +
+    NoAxes() + 
+    coord_fixed() + 
+    ggtitle("")
+plist[["log"]] <- FeaturePlot(object = p40, 
+            features = "log2_ol_vs_wb",
+            min.cutoff = -2,
+            max.cutoff = 2,
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE) + 
+    scale_color_continuous_diverging(palette = "Vik") +
+    NoLegend() +
+    NoAxes() + 
+    ggtitle("")
+for (i in seq_along(plist)) {
+    plot(plist[[i]])
+}
+```
+
+
+```{r}
+avg_exp$RNA
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r fig.width=20, fig.height=3}
+avg_exp <- AverageExpression(object = p40 , features = c("Imp", "mamo", "dati"), assays = "RNA", group.by = "RNA_snn_res.6", slot = "scale.data")
+pheatmap(avg_exp$RNA,
+         # color = rev(sequential_hcl(40, "Inferno")),
+         # breaks = seq(0, 1, 0.025),
+         breaks = seq(-1,1,0.05),
+         color = diverging_hcl(40, "Blue-Red 3"),
+         border_color = NA,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         #fontsize = 16,
+         angle_col = 90)
+```
+
+
+
+```{r fig.width=20, fig.height=5}
+avg_exp <- AverageExpression(object = p40 , 
+                             features = c("repo", "gem",
+                                          "alrm", "Gat", "e", "wun2",
+                                          "zyd",
+                                          "moody", "Mdr65",
+                                          "MFS9", "wrapper", 
+                                          "for", "grh",
+                                          "Hml", "Karl"), 
+                             assays = "RNA", group.by = "RNA_snn_res.6", slot = "scale.data")
+pheatmap(avg_exp$RNA,
+         breaks = seq(-1,1,0.05),
+         color = diverging_hcl(40, "Blue-Red 3"),
+         border_color = NA,
+         cluster_rows = FALSE,
+         cluster_cols = TRUE,
+         angle_col = 90)
+```
+
+```{r}
+glia_clusters <- avg_exp$RNA %>% 
+    as.data.frame() %>% 
+    rownames_to_column("gene") %>% 
+    gather("cluster", "scaled_exp", -gene) %>% 
+    filter(scaled_exp > 0.5)
+glia_clusters
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+Idents(p40) <- p40$RNA_snn_res.6
+glia_cells <- WhichCells(object = p40, idents = glia_clusters$cluster)
+
+DimPlot(object = p40, 
+        cells.highlight = glia_cells, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+
+
+
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("repo", "grh", "for"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("repo", "trol", "for"),
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+
+
+
+
+
+
+```{r fig.width = 20, fig.height = 6}
+FeaturePlot(object = p40, 
+            features = c("modulescore_Glia1", "modulescore_Epithelia1", "modulescore_Photoreceptors1"),
+            min.cutoff = 0.5,
+            max.cutoff = 2,
+            ncol = 3,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r fig.width = 10, fig.height = 10}
+FeaturePlot(object = p40, 
+            features = "nFeature_RNA",
+            min.cutoff = 200,
+            max.cutoff = 3000,
+            ncol = 1,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+```{r fig.width = 10, fig.height = 10}
+FeaturePlot(object = p40, 
+            features = "nCount_RNA",
+            min.cutoff = 500,
+            max.cutoff = 8000,
+            ncol = 1,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+```{r fig.width = 10, fig.height = 10}
+FeaturePlot(object = p40, 
+            features = "percent_hsp",
+            min.cutoff = 0,
+            max.cutoff = 20,
+            ncol = 1,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+FeaturePlot(object = p40, 
+            features = c("percent_mt", "percent_hsp"),
+            ncol = 2,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+
+```{r fig.width = 20, fig.height = 10}
+FeaturePlot(object = p40, 
+            features = c("percent_mt", "percent_hsp"),
+            min.cutoff = 5,
+            max.cutoff = 10,
+            ncol = 2,
+            order = TRUE,
+            cols = c("lightsteelblue2", "black"),
+            pt.size = 0.2, 
+            raster = FALSE,
+            reduction = "tsne_60pcs",
+            coord.fixed = TRUE)
+```
+
+
+
+
+
+# Cell to Keep:
+
+
+```{r}
+cells_to_keep <- FetchData(object = p40, vars = c("RNA_snn_res.6", "log2_ol_vs_wb", "nCount_RNA", "percent_mt", "percent_hsp")) %>% 
+    rownames_to_column("cell_id") %>% 
+    filter(log2_ol_vs_wb < -0.2) %>%                             # ol biased
+    filter(!(RNA_snn_res.6 %in% c(101))) %>%                     # photoreceptors
+    filter(!(RNA_snn_res.6 %in% glia_clusters$cluster)) %>%      # glia, hemocytes, epithelia
+    filter(percent_mt < 5) %>% 
+    filter(percent_hsp < 5) %>% 
+    filter(nCount_RNA > 1000)
+cells_to_keep
+```
+
+
+```{r fig.width = 20, fig.height = 10}
+cells_highlight <- cells_to_keep$cell_id
+DimPlot(object = p40, 
+        cells.highlight = cells_highlight, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+```{r}
+cells_to_keep <- FetchData(object = p40, vars = c("RNA_snn_res.6", "log2_ol_vs_wb", "nCount_RNA", "percent_mt", "percent_hsp")) %>% 
+    rownames_to_column("cell_id") %>% 
+    filter(log2_ol_vs_wb < -0.1) %>%                             # ol biased
+    filter(!(RNA_snn_res.6 %in% c(101))) %>%                     # photoreceptors
+    filter(!(RNA_snn_res.6 %in% glia_clusters$cluster)) %>%      # glia, hemocytes, epithelia
+    filter(percent_mt < 5) %>% 
+    filter(percent_hsp < 5) %>% 
+    filter(nCount_RNA > 1000)
+cells_to_keep
+```
+
+```{r fig.width = 20, fig.height = 10}
+cells_highlight <- cells_to_keep$cell_id
+DimPlot(object = p40, 
+        cells.highlight = cells_highlight, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+```{r}
+cells_to_keep <- FetchData(object = p40, vars = c("experiment", "RNA_snn_res.6", "log2_ol_vs_wb", 
+                                                  "nCount_RNA", "percent_mt", "percent_hsp", 
+                                                  "Antp", "Ubx", "abd-A", "Abd-B")) %>% 
+    rownames_to_column("cell_id") %>% 
+    filter(experiment != "ol_P40") %>%   
+    filter(log2_ol_vs_wb < -0.2) %>%                             # ol biased
+    filter(!(RNA_snn_res.6 %in% c(101))) %>%                     # photoreceptors
+    filter(!(RNA_snn_res.6 %in% glia_clusters$cluster)) %>%      # glia, hemocytes, epithelia
+    filter(percent_mt < 5) %>% 
+    filter(percent_hsp < 5) %>% 
+    filter(nCount_RNA > 1000) %>% 
+    filter(Antp == 0) %>% 
+    filter(Ubx == 0) %>% 
+    filter(`abd-A` == 0) %>% 
+    filter(`Abd-B` == 0)
+cells_to_keep
+```
+
+```{r}
+cells_to_keep %>% 
+    dplyr::count(experiment)
+```
+
+
+
+
+```{r fig.width = 20, fig.height = 10}
+cells_highlight <- cells_to_keep$cell_id
+DimPlot(object = p40, 
+        cells.highlight = cells_highlight, 
+        cols.highlight = "black", 
+        sizes.highlight = 0.2,
+        cols = "lightsteelblue2",
+        pt.size = 0.1, 
+        raster = FALSE, 
+        reduction = "tsne_60pcs") + 
+    NoAxes() + 
+    coord_fixed()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# Save data
+
+
+### pupal fruGal4
+
+```{r}
+arb_fruGal4 <- read_rds("../../proj103/analyses/rds_files/fruGAL4_alevin_trimmed_seurat_list.rds")
+arb_fruGal4
+```
+
+
+```{r}
+for (i in seq_along(arb_fruGal4)) {
+	arb_fruGal4[[i]] <- AddMetaData(object = arb_fruGal4[[i]], metadata = "arb_fruGal4APF", col.name = "experiment")
+	arb_fruGal4[[i]] <- subset(x = arb_fruGal4[[i]], cells = cells_to_keep$cell_id)
+}
+arb_fruGal4
+```
+
+
+```{r}
+arb_fruGal4_clean <- list()
+for (i in seq_along(arb_fruGal4)) {
+    counts_to_use <- "RNA"
+    temp_counts <- arb_fruGal4[[i]]@assays[[counts_to_use]]@counts
+
+    arb_fruGal4_clean[[i]] <- CreateSeuratObject(counts = temp_counts, project = "pupal_fru")
+	arb_fruGal4_clean[[i]] <- AddMetaData(object = arb_fruGal4_clean[[i]], metadata = "arb_fruGal4", col.name = "experiment")
+	arb_fruGal4_clean[[i]] <- AddMetaData(object = arb_fruGal4_clean[[i]], metadata = names(arb_fruGal4)[[i]], col.name = "orig.ident")
+	arb_fruGal4_clean[[i]] <- AddMetaData(object = arb_fruGal4_clean[[i]], metadata = arb_fruGal4[[i]]$sex, col.name = "sex")
+	arb_fruGal4_clean[[i]][["percent_mt"]] <- PercentageFeatureSet(arb_fruGal4_clean[[i]], pattern = "^mt:")
+    arb_fruGal4_clean[[i]][["percent_rProt"]] <- PercentageFeatureSet(arb_fruGal4_clean[[i]], pattern = "Rp(L|S)")
+    arb_fruGal4_clean[[i]][["percent_hsp"]] <- PercentageFeatureSet(arb_fruGal4_clean[[i]], pattern = "^Hsp")
+    arb_fruGal4_clean[[i]][["percent_rRNA"]] <- PercentageFeatureSet(arb_fruGal4_clean[[i]], pattern = "(S|-)rRNA")
+
+}
+names(arb_fruGal4_clean) <- c("arb_fruGal4_female_rep1","arb_fruGal4_female_rep2","arb_fruGal4_male_rep3","arb_fruGal4_male_rep4")
+arb_fruGal4_clean
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```
+

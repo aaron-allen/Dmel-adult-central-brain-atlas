@@ -1,0 +1,498 @@
+---
+title: "Allen_2025b_Analysis__Figure_1E_DEG-zinbwave.Rmd"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 100,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+```{r params}
+params_file <- commandArgs(trailingOnly=T)[3]
+params_path <- paste0("../src/param_files/",params_file)
+print(paste0("The params file is :   ", params_path))
+```
+
+```{r, class.source = 'fold-hide', code = readLines(params_path)}
+```
+
+
+
+<!-- ```{r} -->
+<!-- object_name <- commandArgs(trailingOnly=T)[4] -->
+<!-- object_name -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- annotation <- commandArgs(trailingOnly=T)[5] -->
+<!-- annotation -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- assay_use <- commandArgs(trailingOnly=T)[6] -->
+<!-- assay_use -->
+<!-- ``` -->
+
+
+
+
+```{r}
+dir.create("../analyses/deg_sexed", recursive = TRUE, showWarnings = FALSE)
+```
+
+
+
+## Libraries
+
+```{r packages_etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(cowplot)
+library(SingleCellExperiment)
+library(SummarizedExperiment)
+library(BiocParallel)
+library(zinbwave)
+library(DESeq2)
+```
+
+
+
+
+
+# Load Data
+
+
+```{r load-data}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+Idents(meta_cb) <- "subcluster_clusters"
+meta_cb
+```
+
+
+
+```{r}
+meta_cb$experiment %>% unique() %>% sort()
+```
+
+
+
+```{r}
+subset_cells <- FetchData(object = meta_cb, vars = c("experiment")) %>%
+	rownames_to_column("cell_id") %>%
+	filter(experiment %in% c("aging","cocaine","thirst2","sexed","fca","afca","adfca")) %>%
+	pull(cell_id)
+```
+
+
+
+```{r subset-data}
+meta_cb <- subset(x = meta_cb, cells = subset_cells)
+meta_cb
+```
+
+
+
+# Differential expression
+
+## Parameters
+
+```{r}
+pval <- 0.05
+logfc <- 1
+min.pct <- 0.25
+mcp <- MulticoreParam(20)
+register(mcp)
+```
+
+
+```{r}
+object_name="New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes"   # fru_cb_neurons_NEW_pub_seu  dsx_cb_neurons_NEW_pub_seu
+annotation="subcluster_clusters" # cell_type RNA_snn_res.1  experiment RNA_snn_res.20
+assay_use="RNA"
+```
+
+
+
+```{r}
+
+annotation <- "subcluster_clusters"
+
+object_metadata <- FetchData(object = meta_cb, 
+                             vars = c("sex", "experiment", annotation)) %>% 
+    dplyr::rename(!!"my_celltype" := annotation) %>% 
+    dplyr::count(my_celltype, sex) %>% 
+    mutate(n = as.numeric(n)) %>% 
+    spread("sex", "n") %>% 
+    mutate(female = if_else(is.na(female), 0, female),
+           male = if_else(is.na(male), 0, male)
+           ) 
+
+object_metadata
+
+```
+
+
+
+## ZINB-wave
+
+```{r zinbwave}
+
+meta_ZINB <- list()
+
+for(label in levels(meta_cb)){
+    
+    num_female_cells <- object_metadata %>% 
+        filter(my_celltype == label) %>% 
+        pull(female)
+    num_male_cells <- object_metadata %>% 
+        filter(my_celltype == label) %>% 
+        pull(male)
+
+    if (num_female_cells >= 3 & num_male_cells >= 3) {
+        
+        message(paste0("\n\n\nNow processing:   ", label, "\n"))
+
+        sce <- as.SingleCellExperiment(subset(meta_cb, idents = label))
+        
+        
+        sce <- sce[rowSums(counts(sce) >= 1) >= 10,]
+        nms <- c("counts", setdiff(assayNames(sce), "counts"))
+        assays(sce) <- assays(sce)[nms]
+        se <- SummarizedExperiment(assays = list(counts = as.matrix(counts(sce))), colData = colData(sce))
+        
+        se$sex <- factor(se$sex, levels = unique(se$sex))
+        design <- model.matrix(~se$experiment*se$sex)
+        
+        zinb <- zinbFit(Y = se, X = design, epsilon = 1e6, K = 2, verbose = TRUE, BPPARAM = MulticoreParam(20))
+        se_zinb <- zinbwave(Y = se, X = design, epsilon = 1e6, fitted_model = zinb, K = 2, verbose = TRUE, observationalWeights = TRUE)
+        meta_ZINB[[label]] <- se_zinb
+        
+        gc()
+        
+    }
+    
+}
+```
+
+
+```{r}
+
+write_rds(
+    x = meta_ZINB,
+    file = paste0(
+        "../../proj136/analyses/deg_sexed/",
+        object_name,
+        "_DEG_sexed",
+        "_", annotation,
+        "_", assay_use,
+        "_zinbwave_models_1",
+        ".rds"
+    )
+)
+
+```
+
+
+
+
+
+
+## DESeq2
+
+
+```{r deseq2}
+
+ZINB_DESeq <- list()
+
+for(i in names(meta_ZINB)){
+    
+    cat(i, "\n")
+    exp <- meta_ZINB[[i]]
+    
+    dds <- DESeqDataSet(exp, design = ~experiment + sex)
+    scr <- scran::computeSumFactors(dds)
+    sizeFactors(dds) <- sizeFactors(scr)
+    dds <- DESeq(dds, test = "LRT", reduced = ~experiment, minmu = 1e-6, minReplicatesForReplace = Inf)
+    ZINB_DESeq[[i]] <- dds
+
+    gc()
+    
+}
+
+```
+
+
+
+```{r}
+
+write_rds(
+    x = ZINB_DESeq,
+    file = paste0(
+        "../../proj136/analyses/deg_sexed/",
+        object_name,
+        "_DEG_sexed",
+        "_", annotation,
+        "_", assay_use,
+        "_zinb_deseq_models_1",
+        ".rds"
+    )
+)
+
+```
+
+
+```{r}
+
+ZINB_DESeq.table.ALL <- data.frame()
+
+for(i in names(ZINB_DESeq)){
+    
+    res <- lfcShrink(ZINB_DESeq[[i]], contrast = c("sex", "female", "male"), type = "normal", alpha = 0.05)
+    res$padj <- p.adjust(res$pvalue, method="BH")
+    res.t <- res %>% 
+        as.data.frame() %>% 
+        rownames_to_column("Gene") %>% 
+        mutate(
+            Cluster=i, 
+            comparison=gsub(" ", "_", sub("^.*sex ", "", res@elementMetadata$description[2]))
+        )
+    ZINB_DESeq.table.ALL <- rbind(ZINB_DESeq.table.ALL, res.t)
+  
+}
+
+```
+
+
+
+```{r}
+
+write_csv(
+    x = ZINB_DESeq.table.ALL,
+    file = paste0(
+        "../../proj136/analyses/deg_sexed/",
+        object_name,
+        "_DEG_sexed",
+        "_", annotation,
+        "_", assay_use,
+        "_zinb_deseq_df_1",
+        ".csv"
+    )
+)
+
+```
+
+
+
+```{r}
+rm(dds, scr, ZINB_DESeq, ZINB_DESeq.table.ALL)
+gc()
+```
+
+
+
+
+
+# Volcano Plots
+
+```{r}
+plot_all_volcanoplot <- function(deg_table,
+                                 p_cutoff = 5e-3,
+                                 fc_cutoff = 0.3,
+                                 x_lim = NULL,
+                                 y_lim = NULL,
+                                 genes_exclude = c(
+                                 	"fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+									"fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+									"fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+									"EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+									"lncRNA:roX1", "lncRNA:roX2",
+									"whe", "Orcokinin", "SIFa", "Pdcd4",
+									"lcs"
+									),
+                                 dot_colours = c("grey80", "grey50", "grey50", "red2"),
+                                 plot_title = "unknown data",
+                                 plot_plot = TRUE,
+                                 test_used = "?",
+                                 return_plot_obj = FALSE) {
+
+    plist <- list()
+    clusters <- unique(deg_table$Cluster)
+    for (i in seq_along(clusters)) {
+        temp <- deg_table %>%
+            filter(Cluster == clusters[[i]]) %>%
+            select(Gene, avg_log2FC, p_val_adj) %>%
+            filter(!Gene %in% genes_exclude) %>%
+            as.data.frame()
+        if (dim(temp)[1] == 0) {
+            next
+        }
+        most_diff <- max(1, max(abs(temp$avg_log2FC), na.rm = TRUE))
+        if (is.null(x_lim)) {
+            x_lim_set = c(-most_diff - 1, most_diff + 1)
+        } else {
+            x_lim_set = x_lim
+        }
+        most_sig <- max(20, max(-log10(temp[["p_val_adj"]]), na.rm = TRUE)) + 5
+        if (is.null(y_lim)) {
+            y_lim_set = c(0, most_sig)
+        } else {
+            y_lim_set = y_lim
+        }
+
+        plist[[i]] <- EnhancedVolcano(toptable = temp,
+                              lab = temp$Gene,
+                              xlim = x_lim_set,
+                              ylim = y_lim_set,
+                              x = "avg_log2FC",
+                              y = "p_val_adj",
+                              pCutoff = p_cutoff,
+                              FCcutoff = fc_cutoff,
+                              col = dot_colours,
+                              pointSize = 4,
+                              raster = TRUE,
+                              boxedLabels = FALSE,
+                              drawConnectors = TRUE,
+                              title = plot_title,
+                              subtitle = paste0("Cluster = ", clusters[[i]],
+                                                ", test = ", test_used),
+                              caption = paste0("FC cutoff = ", fc_cutoff,
+                                               "; p-value cutoff = ", p_cutoff),
+                              )
+        if (plot_plot) {
+            plot(plist[[i]])
+        }
+    }
+    if (return_plot_obj) {
+        return(plist)
+    }
+}
+```
+
+
+```{r plot-volcano, fig.width=10, fig.height=10}
+plot_all_volcanoplot(deg_table = all_deg_sig,
+					 plot_title = object_name,
+					 test_used = test_use
+					 )
+```
+
+
+```{r plot-volcano, fig.width=10, fig.height=10}
+for (i in seq_along(datasets)) {
+    plot_all_volcanoplot(deg_table = filter(.data = all_deg, Experiment == datasets[[i]]),
+                         plot_title = paste0(object_name, " - Experiment = ", datasets[[i]]),
+                         test_used = test_use,
+                         genes_exclude = c("lncRNA:roX1", "lncRNA:roX2"))
+}
+```
+
+
+
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (job_id != "local") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```

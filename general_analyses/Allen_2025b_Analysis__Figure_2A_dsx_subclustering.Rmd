@@ -1,0 +1,984 @@
+---
+title: "Allen_2025b_Analysis__Figure_2A_dsx_subclustering"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load Data
+
+
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+DefaultAssay(meta_cb) <- "RNA"
+Idents(meta_cb) <- "subcluster_clusters"
+meta_cb
+```
+
+
+
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=14, fig.height=14}
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+# plot(p1)
+
+p2 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.10",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+# plot(p2)
+
+
+p3 <- FeaturePlot(object = meta_cb,
+           features = "dsx",
+           pt.size = 0.4, 
+		   max.cutoff = 2,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p3[[1]]$layers[[1]]$aes_params$alpha = .1
+# plot(p3)
+
+
+
+
+```
+
+```{r warning=FALSE, message=FALSE, fig.width=14, fig.height=14}
+plot(p1)
+plot(p2)
+plot(p3)
+```
+
+
+
+"Achl_058", "Achl_003", "Achl_024", "Achl_042", "Achl_048", "GABA_061" 
+138,195,28,33,85,90
+
+
+
+
+
+```{r}
+dsx_cells_filtering <- FetchData(object = meta_cb, vars = c("dsx", "EGFP", "experiment", "annotation_broad_cell_type_ext_fix", "subcluster_clusters", "RNA_snn_res.10", "sex"), slot = "counts") %>%
+    filter(!annotation_broad_cell_type_ext_fix %in% c("Kenyon_cell", "Monoaminergic")) %>%
+    rownames_to_column("cell_id") %>%
+    dplyr::mutate(to_keep = "no") %>%
+    dplyr::mutate(to_keep = if_else(experiment == "aging" & dsx > 0, "yes", to_keep)) %>%
+    dplyr::mutate(to_keep = if_else(experiment == "cocaine" & dsx > 0, "yes", to_keep)) %>%
+    dplyr::mutate(to_keep = if_else(experiment == "thirst2" & dsx > 0, "yes", to_keep)) %>%
+    dplyr::mutate(to_keep = if_else(experiment == "sexed" & (dsx > 0 | EGFP > 0), "yes", to_keep)) %>%
+    dplyr::mutate(to_keep = if_else(experiment == "sleep" & dsx > 0, "yes", to_keep)) %>%
+    dplyr::mutate(to_keep = if_else(experiment == "fca" & dsx > 0, "yes", to_keep)) %>%
+    dplyr::mutate(to_keep = if_else(experiment == "afca" & dsx > 0, "yes", to_keep)) %>%
+    dplyr::mutate(to_keep = if_else(experiment == "adfca" & dsx > 0, "yes", to_keep)) %>%
+    dplyr::mutate(to_keep = if_else(experiment == "species" & dsx > 0, "yes", to_keep))
+dsx_cells_filtering
+```
+
+
+```{r}
+dsx_cells <- dsx_cells_filtering %>%
+    filter(to_keep == "yes") %>% 
+    pull(cell_id)
+length(dsx_cells)
+```
+
+```{r}
+dsx_cells <- dsx_cells_filtering %>%
+	filter(subcluster_clusters %in% c("Achl_058", "Achl_003", "Achl_024", "Achl_042", "Achl_048", "GABA_061") |
+           RNA_snn_res.10 %in% c(4,195,33,85,138,15,90)) %>% 
+    filter(to_keep == "yes") %>% 
+    pull(cell_id)
+length(dsx_cells)
+```
+
+
+```{r}
+dsx_cells_filtering %>% 
+	filter(subcluster_clusters %in% c("Achl_058", "Achl_003", "Achl_024", "Achl_042", "Achl_048", "GABA_061") |
+           RNA_snn_res.10 %in% c(4,195,33,85,138,15,90)) %>% 
+    filter(to_keep == "yes") %>% 
+    dplyr::count(experiment) %>% 
+    arrange(desc(n))
+```
+
+
+
+```{r}
+dsx_cells_filtering %>% 
+	filter(subcluster_clusters %in% c("Achl_058", "Achl_003", "Achl_024", "Achl_042", "Achl_048", "GABA_061") |
+           RNA_snn_res.10 %in% c(4,195,33,85,138,15,90)) %>% 
+    filter(to_keep == "yes") %>% 
+    dplyr::count(sex) %>% 
+    arrange(desc(n))
+```
+
+
+
+
+
+```{r fig.width=14, fig.height=14}
+
+p1 <- DimPlot(object = meta_cb,
+			  # cells.highlight = dplyr::setdiff(dsx_cells,dsx_cells_exclude),
+			  cells.highlight = dsx_cells,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+# p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+## Cell Selector
+
+<!-- ```{r} -->
+<!-- dsx_region_1 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_2 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_3 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_4 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_5 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_6 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- cells_in_dsx_positive_regions <- c( -->
+<!--     dsx_region_1, -->
+<!--     dsx_region_2, -->
+<!--     dsx_region_3, -->
+<!--     dsx_region_4, -->
+<!--     dsx_region_5, -->
+<!--     dsx_region_6 -->
+<!-- ) -->
+<!-- length(cells_in_dsx_positive_regions) -->
+<!-- ``` -->
+
+
+
+```{r}
+# write_csv(x = data.frame(cell_id = dplyr::intersect(dsx_cells,cells_in_dsx_positive_regions)), 
+#           file = "../../proj136/analyses/cell_lists/subclustering_dsx_metablob_cells_to_keep--round3.csv"
+#         )
+# write_csv(x = data.frame(cell_id = cells_in_dsx_positive_regions), 
+#           file = "../../proj136/analyses/cell_lists/subclustering_dsx_metablob_cells_in_dsx_positive_regions--round3.csv"
+#         )
+cells_in_dsx_positive_regions <- read_csv(file = "../../proj136/analyses/cell_lists/subclustering_dsx_metablob_cells_in_dsx_positive_regions--round3.csv") %>% pull(cell_id)
+```
+
+
+
+
+```{r fig.width=14, fig.height=14}
+
+dsx_cells <- dplyr::intersect(dsx_cells,cells_in_dsx_positive_regions)
+
+p1 <- DimPlot(object = meta_cb,
+			  cells.highlight = dsx_cells,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    NoAxes() +
+    NoLegend() +
+    labs(caption = paste0(length(dsx_cells), " cells")) +
+    coord_fixed()
+
+# p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+```{r}
+dsx_sub <- subset(x = meta_cb, cells = dsx_cells)
+dsx_sub
+```
+
+```{r}
+dsx_list <- SplitObject(object = dsx_sub, split.by = "experiment")
+dsx_list
+```
+
+
+
+
+
+```{r}
+colnames(meta_cb@meta.data)
+```
+
+
+
+```{r}
+dsx_list_clean <- list()
+for (i in seq_along(dsx_list)) {
+    counts_to_use <- "RNA"
+    dsx_list_clean[[i]] <- CreateSeuratObject(counts = dsx_list[[i]]@assays[[counts_to_use]])
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$orig.ident, col.name = "orig.ident")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$experiment, col.name = "experiment")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$tissue, col.name = "tissue")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$cell_nuclei, col.name = "cell_nuclei")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$availability, col.name = "availability")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$sex, col.name = "sex")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$percent_mt, col.name = "percent_mt")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$percent_rRNA, col.name = "percent_rRNA")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$percent_rProt, col.name = "percent_rProt")
+	dsx_list_clean[[i]] <- AddMetaData(object = dsx_list_clean[[i]], metadata = dsx_list[[i]]$percent_hsp, col.name = "percent_hsp")
+}
+names(dsx_list_clean) <- names(dsx_list)
+dsx_list_clean
+```
+
+
+
+
+
+```{r}
+rm(meta_cb)
+gc()
+```
+
+
+
+
+
+### Remove Low Quality Cells
+
+```{r}
+
+cells_to_keep_file <- "../../proj136/analyses/cell_lists/subclustering_dsx_metablob_cells_to_keep--round4.csv"
+
+if (file.exists(cells_to_keep_file)) {
+    cells_to_keep <- read_csv(file = cells_to_keep_file)
+    for (i in seq_along(dsx_list_clean)) {
+        dsx_list_clean[[i]] <-subset(dsx_list_clean[[i]], cells = cells_to_keep$cell_id)
+    }
+    dsx_list_clean
+}
+```
+
+
+### Save list
+
+```{r}
+write_rds(x = dsx_list_clean, file = "../../proj136/analyses/rds_files/subclustering_dsx__seu_list_clean--round3_clean.rds")
+```
+
+
+
+
+# Normalize
+
+
+```{r warning=FALSE, message=FALSE}
+
+n_var_features <- 500
+
+for (i in seq_along(dsx_list_clean)) {
+    dsx_list_clean[[i]] <- NormalizeData(object = dsx_list_clean[[i]],assay = "RNA")
+    dsx_list_clean[[i]] <- FindVariableFeatures(object = dsx_list_clean[[i]],
+                                                  selection.method = "mean.var.plot",     # "mean.var.plot" or "vst"
+                                                  nfeatures = n_var_features,
+                                                  mean.cutoff = c(0.01,Inf),
+                                                  dispersion.cutoff = c(0.01, Inf))
+}
+```
+
+
+
+
+
+
+# Integrate
+
+```{r}
+var_features <- SelectIntegrationFeatures(object.list = dsx_list_clean, nfeatures = n_var_features)
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+var_features <- setdiff(var_features, iso_genes_remove)
+```
+
+
+```{r}
+dsx_seu <- merge(dsx_list_clean[[1]],
+		                unlist(dsx_list_clean[2:length(dsx_list_clean)]),
+		                merge.data = TRUE)
+
+VariableFeatures(dsx_seu) <- var_features
+dsx_seu
+```
+
+
+
+
+```{r}
+FetchData(object = dsx_seu, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+
+
+# Run PCA
+
+```{r}
+library(future)
+# plan("multisession", workers = 8)
+options(future.globals.maxSize = 8*1024*1024^2)
+
+DefaultAssay(dsx_seu) <- "RNA"
+dsx_seu <- ScaleData(
+    object = dsx_seu,
+    features = rownames(dsx_seu),
+    assay = "RNA",
+    vars.to.regress = NULL #c("experiment") #, "sex", "nCount_RNA", "percent_mt", "percent_hsp")
+)
+```
+
+
+```{r}
+# plan("multisession", workers = 8)
+dsx_seu <- RunPCA(dsx_seu, features = var_features, npcs = 100, approx = FALSE)
+
+plan("sequential")
+invisible(gc())
+```
+
+
+# Run Harmony
+
+```{r}
+library(harmony)
+dsx_seu <- RunHarmony(dsx_seu,
+                    group.by.vars = c("orig.ident", "experiment", "cell_nuclei"),
+					lambda = c(1,1,1),
+                    assay.use = "RNA")
+invisible(gc())
+```
+
+
+
+
+
+
+
+
+# Visualize
+
+## Plot PCA
+
+
+
+
+```{r fig.width=12, fig.height=20, warning=FALSE, message=FALSE}
+library(colorspace)
+library(cowplot)
+p_list <- list()
+for (i in 1:10) {
+    p_list[[i]] <- DimHeatmap(dsx_seu,
+                            reduction = "harmony",
+                            dims = i,
+                            cells = 500,
+                            balanced = TRUE,
+                            fast = FALSE) +
+        scale_fill_gradientn(colors = diverging_hcl(10, palette = "Vik"))
+}
+plot_grid(plotlist = p_list, ncol = 2)
+rm(p_list)
+invisible(gc())
+```
+
+
+## Run UMAP
+
+
+
+```{r}
+
+test_pcs <- seq(5, 60, 5)
+
+for (i in seq_along(test_pcs)) {
+    dsx_seu <- RunUMAP(dsx_seu, 
+		                    reduction = "harmony", 
+		                    dims = 1:test_pcs[[i]],
+		                    n.neighbors = 50,
+		                    n.epochs = 1000,
+		                    min.dist = 0.01,
+		                    spread = 5,
+		                    fast = FALSE,
+		                    verbose = TRUE,
+		                    reduction.name = paste0("umap_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("umap", test_pcs[[i]], "pcs_"))
+}
+
+dsx_seu@reductions[["umap"]] <- dsx_seu@reductions[["umap_60pcs"]]
+
+```
+
+
+```{r}
+
+for (i in seq_along(test_pcs)) {
+    dsx_seu <- RunTSNE(dsx_seu,
+		                    reduction = "harmony",
+		                    num_threads = 24,
+		                    verbose = F,
+		                    dims = 1:test_pcs[[i]],
+		                    do.fast = FALSE,
+		                    check_duplicates = F,
+		                    max_iter = 10000,
+		                    theta = 0.05,
+		                    reduction.name = paste0("tsne_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("tsne", test_pcs[[i]], "pcs_"))
+}
+
+dsx_seu@reductions[["tsne"]] <- dsx_seu@reductions[["tsne_60pcs"]]
+
+```
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = dsx_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = dsx_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "sex") + coord_fixed())
+}
+```
+
+```{r fig.width=16, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = dsx_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment", split.by = "sex") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = dsx_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = dsx_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "sex") + coord_fixed())
+}
+```
+
+```{r fig.width=16, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = dsx_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "experiment", split.by = "sex") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=10, fig.height=10}
+col_list <- scales::hue_pal()(length(unique(dsx_seu$experiment)))
+test_pc <- 60
+p <- list()
+for (i in 1:length(unique(dsx_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = dsx_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(dsx_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(dsx_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(dsx_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+col_list <- scales::hue_pal()(length(unique(dsx_seu$experiment)))
+test_pc <- 60
+p <- list()
+for (i in 1:length(unique(dsx_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = dsx_seu,
+                    reduction = paste0("tsne_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(dsx_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(dsx_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(dsx_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+```{r}
+FetchData(object = dsx_seu, vars = "experiment") %>% 
+    dplyr::count(experiment)
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("Fer2", "Optix", "TfAP-2", "drm", "sv", "Drgx", "unc-4", "foxo", "bsh", "Gad1", "inv", "tey")
+plist <- FeaturePlot(
+    object = dsx_seu, 
+    reduction = "umap_10pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("Fer2", "Optix", "TfAP-2", "drm", "sv", "Drgx", "unc-4", "foxo", "bsh", "Gad1", "inv", "tey")
+plist <- FeaturePlot(
+    object = dsx_seu, 
+    reduction = "umap_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+# Clustering
+
+```{r}
+dsx_seu <- FindNeighbors(dsx_seu,
+                       reduction = "harmony",
+                       dims = 1:30,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+# in_conda <- R.home() %>% str_detect("R4_cbrg")
+# if (in_conda) {
+#     algorithm_use <- 4
+# } else {
+    algorithm_use <- 1
+# }
+
+dsx_seu <- FindClusters(dsx_seu,
+                        algorithm = algorithm_use,
+                        resolution = c(0.1,0.2,0.5,1,1.5,2,3,4,5,6,8,10),
+                        verbose = TRUE)
+```
+
+
+
+```{r}
+# write_rds(x = dsx_seu, file = "../../proj136/analyses/rds_files/subclustering_dsx__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+# dsx_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_dsx__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+```
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(dsx_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = dsx_seu, group.by = res[[i]],
+                           reduction = "umap_60pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(dsx_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = dsx_seu, group.by = res[[i]],
+                           reduction = "umap_60pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(dsx_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = dsx_seu, group.by = res[[i]],
+                           reduction = "tsne_60pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(dsx_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = dsx_seu, group.by = res[[i]],
+                           reduction = "tsne_60pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+```{r fig.width=10}
+FetchData(object = dsx_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment, RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "stack")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = dsx_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment,RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = dsx_seu, vars = c("experiment", "cell_nuclei", "RNA_snn_res.4")) %>% 
+    dplyr::count(cell_nuclei, RNA_snn_res.4) %>%
+    # mutate(region = if_else(experiment %in% c("aging", "cocaine"),"WB","CB")) %>%  
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = cell_nuclei)) +
+        geom_bar(stat = "identity", position = "fill")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = dsx_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(sex, RNA_snn_res.4) %>%
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = sex)) +
+        geom_bar(stat = "identity", position = "fill")
+```
+
+
+```{r}
+FetchData(object = dsx_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(RNA_snn_res.4, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+```{r}
+FetchData(object = dsx_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(experiment, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+
+
+# Save
+
+
+```{r}
+write_rds(x = dsx_seu, file = "../../proj136/analyses/rds_files/subclustering_dsx__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+# dsx_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_dsx__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+# dsx_seu
+```
+
+
+
+
+# Markers
+
+
+```{r}
+Idents(dsx_seu) <- "RNA_snn_res.2"
+markers_dsx <- FindAllMarkers(object = dsx_seu, assay = "RNA", test.use = "wilcox",only.pos = TRUE)
+markers_dsx
+```
+
+
+```{r}
+write_csv(x = markers_dsx, file = "../../proj136/analyses/markers/subclustering_dsx_seu--round1--500VarGene--NoReg--Harmony_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+# markers_dsx <- read_csv(file = "../../proj136/analyses/markers/subclustering_dsx_seu--round1--500VarGene--NoReg--Harmony_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+markers_dsx
+```
+
+
+
+
+
+```{r fig.width=10, fig.height=10}
+markers_dsx %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(dsx_seu, features = top10$gene) + 
+    scale_fill_continuous_diverging(palette = "Vik", rev = FALSE,
+                                    limits = c(-2,2), oob = scales::squish,
+                                    na.value = "white") +
+    NoLegend()
+```
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

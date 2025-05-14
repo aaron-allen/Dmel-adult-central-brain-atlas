@@ -1,0 +1,1738 @@
+---
+title: "Sexed_Paper_2_Analysis__Figure_3_supp_Kenyon_cell_re_subclustering"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load Data
+
+
+
+
+
+```{r load-meta-brain}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+meta_cb
+```
+
+
+
+
+```{r}
+KC_seu <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1--1000VarGene--NoReg--Harmony_ori_exp_cell--_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_Kenyon_cell_subclusting.rds")
+KC_seu
+```
+
+```{r}
+KC_seu@meta.data %>% colnames()
+```
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = KC_seu, 
+		group.by = "RNA_snn_res.1",
+        reduction = "umap_20pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = KC_seu, 
+		group.by = "RNA_snn_res.4",
+        reduction = "umap_20pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = KC_seu, 
+		group.by = "RNA_snn_res.10",
+        reduction = "umap_20pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+5,6,16,singleton
+0,1,25,singleton
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = KC_seu, 
+		group.by = "experiment",
+        reduction = "umap_20pcs", 
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+
+
+
+
+```{r fig.width=10}
+FetchData(object = KC_seu, vars = c("experiment","RNA_snn_res.1")) %>% 
+    dplyr::count(experiment, RNA_snn_res.1) %>% 
+    ggplot(aes(x = RNA_snn_res.1, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill")
+```
+
+
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("percent_mt", "percent_rRNA", "percent_rProt", "percent_hsp" )
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r}
+rp_genes <- KC_seu %>% rownames() %>% str_subset("Rp[S|L]")
+rp_genes
+```
+
+
+```{r}
+KC_seu <- AddModuleScore(object = KC_seu, features = list(rp_genes), name = "modulescore_rp")
+```
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("modulescore_rp1")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+```{r}
+mt_genes <- KC_seu %>% rownames() %>% str_subset("^mt:")
+mt_genes
+```
+
+
+```{r}
+KC_seu <- AddModuleScore(object = KC_seu, features = list(mt_genes), name = "modulescore_mt")
+```
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("modulescore_mt1")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r}
+hsp_genes <- KC_seu %>% rownames() %>% str_subset("Hsp")
+hsp_genes
+```
+
+```{r}
+KC_seu <- AddModuleScore(object = KC_seu, features = list(hsp_genes), name = "modulescore_hsp")
+```
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("modulescore_hsp1")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- hsp_genes
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+```{r}
+# 
+# job::job({
+#     library(future)
+#     plan("multisession", workers = 8)
+#     options(future.globals.maxSize = 8*1024*1024^2)
+#     
+#     Idents(KC_seu) <- "RNA_snn_res.1"
+#     markers_KC_res1 <- FindAllMarkers(object = KC_seu, logfc.threshold = 0.5, only.pos = TRUE, verbose = TRUE)
+#     
+#     job::export(c(markers_KC_res1))
+# }, import = c(KC_seu))
+
+```
+
+
+
+
+
+
+```{r}
+# markers_KC_res1
+```
+
+
+
+```{r}
+# markers_KC_res1 %>% 
+#     filter(cluster == 12) %>% 
+#     filter(p_val_adj < 0.05) %>% 
+#     arrange(desc(avg_log2FC))
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("rn", "CG9008", "CG43795", "Apoltp", "CG43759", "kek2")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("rn", "CG9008", "CG43795", "Apoltp")
+plist <- FeaturePlot(
+    object = meta_cb, 
+    reduction = "tsne_240pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.4, 
+    min.cutoff = 0,
+    max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r}
+# markers_KC_res1 %>% 
+#     filter(cluster == 17) %>% 
+#     filter(p_val_adj < 0.05) %>% 
+#     arrange(desc(avg_log2FC))
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("CG8641", "mamo", "DAT")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r}
+# markers_KC_res1 %>% 
+#     filter(cluster == 5) %>% 
+#     filter(p_val_adj < 0.05) %>% 
+#     arrange(desc(avg_log2FC))
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("CG17716", "side", "mbl", "ct", "Octbeta2R", "kek2", "SoxN", "bi", "beat-Ic")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("CG17716", "side", "mbl", "ct", "Octbeta2R", "kek2", "SoxN", "bi", "beat-Ic")
+plist <- FeaturePlot(
+    object = meta_cb, 
+    reduction = "tsne_240pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.4, 
+    min.cutoff = 0,
+    max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("br", "bi")
+plist <- FeaturePlot(
+    object = meta_cb, 
+    reduction = "tsne_240pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.4, 
+    min.cutoff = 0,
+    max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+Kenyon_cell	comment to come later	ey	Pka-R2	Dop1R2	Hr51	CG34402	Gdap2	prt	CG1129	cora
+ab_KC	alpha and beta lobe subset of kenyon cells	lbm	crb	Cks85A	Tsp42En	Eip93F
+prime_KC	alpha' and beta' lobe subset of kenyon cells	CG8641	Gr77a	Lac	CG42322
+y_KC	gamma lobe subset of kenyon cells	CG13055	Lgr3	GstD11	CAH2	CG32204	ab
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("ey", "Pka-R2", "Dop1R2", "Hr51", "CG34402", "Gdap2", "prt", "CG1129", "cora")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("lbm", "crb", "Cks85A", "Tsp42En", "Eip93F")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("CG8641", "Gr77a", "Lac", "CG42322")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("CG13055", "Lgr3", "GstD11", "CAH2", "CG32204", "ab")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("Imp", "dati", "br", "Eip93F")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("Gad1", "VGlut", "Vmat", "repo")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("hec", "Dh31-R")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+5,6,16,singleton
+0,1,25,singleton
+
+```{r}
+KC_cells <- FetchData(
+        object = KC_seu, 
+        vars = c("RNA_snn_res.1", "RNA_snn_res.4")) %>%
+    filter(!RNA_snn_res.1 %in% c("5","6","16","17","singleton")) %>%
+    filter(!RNA_snn_res.4 %in% c("0","1","25","30", "32","singleton")) %>%
+	rownames()
+head(KC_cells)
+length(KC_cells)
+```
+
+
+
+
+```{r fig.width=14, fig.height=14}
+
+p1 <- DimPlot(object = KC_seu,
+			  cells.highlight = KC_cells,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "umap_20pcs",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+# p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+<!-- ## Cell Selector -->
+
+<!-- ```{r} -->
+<!-- dsx_region_1 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_2 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_3 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_4 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_5 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- dsx_region_6 <- CellSelector(plot = p1) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- cells_in_dsx_positive_regions <- c( -->
+<!--     dsx_region_1, -->
+<!--     dsx_region_2, -->
+<!--     dsx_region_3, -->
+<!--     dsx_region_4, -->
+<!--     dsx_region_5, -->
+<!--     dsx_region_6 -->
+<!-- ) -->
+<!-- length(cells_in_dsx_positive_regions) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- # write_csv(x = data.frame(cell_id = dplyr::intersect(dsx_cells,cells_in_dsx_positive_regions)),  -->
+<!-- #           file = "../../proj136/analyses/cell_lists/subclustering_dsx_metablob_cells_to_keep--round1.csv" -->
+<!-- #         ) -->
+<!-- # write_csv(x = data.frame(cell_id = cells_in_dsx_positive_regions),  -->
+<!-- #           file = "../../proj136/analyses/cell_lists/subclustering_dsx_metablob_cells_in_dsx_positive_regions--round1.csv" -->
+<!-- #         ) -->
+<!-- cells_in_dsx_positive_regions <- read_csv(file = "../../proj136/analyses/cell_lists/subclustering_dsx_metablob_cells_in_dsx_positive_regions--round1.csv") %>% pull(cell_id) -->
+<!-- ``` -->
+
+
+
+
+<!-- ```{r fig.width=14, fig.height=14} -->
+
+<!-- dsx_cells <- dplyr::intersect(dsx_cells,cells_in_dsx_positive_regions) -->
+
+<!-- p1 <- DimPlot(object = meta_cb, -->
+<!-- 			  cells.highlight = dsx_cells, -->
+<!-- 			  sizes.highlight = 0.4,  -->
+<!-- 			  cols.highlight = "black",  -->
+<!-- 			  cols = "lightsteelblue2", -->
+<!--         reduction = "tsne_240pcs", -->
+<!--         pt.size = 0.4, -->
+<!--         raster = FALSE, -->
+<!--         label = FALSE, -->
+<!--         label.box = FALSE, -->
+<!--         repel = TRUE) + -->
+<!--     NoAxes() + -->
+<!--     NoLegend() + -->
+<!--     labs(caption = paste0(length(dsx_cells), " cells")) + -->
+<!--     coord_fixed() -->
+
+<!-- # p1[[1]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- plot(p1) -->
+
+<!-- ``` -->
+
+
+
+```{r}
+KC_sub <- subset(x = KC_seu, cells = KC_cells)
+KC_sub
+```
+
+```{r}
+KC_list <- SplitObject(object = KC_sub, split.by = "experiment")
+KC_list
+```
+
+
+
+
+```{r}
+KC_list_clean <- list()
+for (i in seq_along(KC_list)) {
+    counts_to_use <- "RNA"
+    KC_list_clean[[i]] <- CreateSeuratObject(counts = KC_list[[i]]@assays[[counts_to_use]])
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$orig.ident, col.name = "orig.ident")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$experiment, col.name = "experiment")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$tissue, col.name = "tissue")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$cell_nuclei, col.name = "cell_nuclei")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$availability, col.name = "availability")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$sex, col.name = "sex")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$percent_mt, col.name = "percent_mt")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$percent_rRNA, col.name = "percent_rRNA")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$percent_rProt, col.name = "percent_rProt")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$percent_hsp, col.name = "percent_hsp")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$modulescore_mt1, col.name = "modulescore_mt1")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$modulescore_rp1, col.name = "modulescore_rp1")
+	KC_list_clean[[i]] <- AddMetaData(object = KC_list_clean[[i]], metadata = KC_list[[i]]$modulescore_hsp1, col.name = "modulescore_hsp1")
+}
+names(KC_list_clean) <- names(KC_list)
+KC_list_clean
+```
+
+
+
+
+### Remove Low Quality Cells
+
+<!-- ```{r} -->
+
+<!-- cells_to_keep_file <- "../../proj136/analyses/cell_lists/" -->
+
+<!-- if (file.exists(cells_to_keep_file)) { -->
+<!--     cells_to_keep <- read_csv(file = cells_to_keep_file) -->
+<!--     for (i in seq_along(KC_list_clean)) { -->
+<!--         KC_list_clean[[i]] <-subset(KC_list_clean[[i]], cells = cells_to_keep$cell_id) -->
+<!--     } -->
+<!--     KC_list_clean -->
+<!-- } -->
+<!-- ``` -->
+
+
+### Save list
+
+```{r}
+# write_rds(x = KC_list_clean, file = "../../proj136/analyses/rds_files/subclustering_KC__seu_list_clean--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+```
+
+
+
+
+# Normalize
+
+
+```{r warning=FALSE, message=FALSE}
+
+n_var_features <- 500
+
+for (i in seq_along(KC_list_clean)) {
+    KC_list_clean[[i]] <- NormalizeData(object = KC_list_clean[[i]],assay = "RNA")
+    KC_list_clean[[i]] <- FindVariableFeatures(object = KC_list_clean[[i]],
+                                                  selection.method = "mean.var.plot",     # "mean.var.plot" or "vst"
+                                                  nfeatures = n_var_features,
+                                                  mean.cutoff = c(0.01,Inf),
+                                                  dispersion.cutoff = c(0.01, Inf))
+}
+```
+
+
+
+
+
+
+# Integrate
+
+```{r}
+var_features <- SelectIntegrationFeatures(object.list = KC_list_clean, nfeatures = n_var_features)
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+var_features <- setdiff(var_features, iso_genes_remove)
+```
+
+
+```{r}
+KC_seu <- merge(KC_list_clean[[1]],
+		                unlist(KC_list_clean[2:length(KC_list_clean)]),
+		                merge.data = TRUE)
+
+VariableFeatures(KC_seu) <- var_features
+KC_seu
+```
+
+
+
+
+```{r}
+FetchData(object = KC_seu, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+
+
+# Run PCA
+
+
+
+```{r}
+library(future)
+# plan("multisession", workers = 8)
+options(future.globals.maxSize = 8*1024*1024^2)
+
+DefaultAssay(KC_seu) <- "RNA"
+KC_seu <- ScaleData(
+    object = KC_seu,
+    features = rownames(KC_seu),
+    assay = "RNA",
+    vars.to.regress = c("percent_mt", "percent_hsp", "percent_rRNA", "percent_rProt")
+)
+```
+
+
+```{r}
+# plan("multisession", workers = 8)
+KC_seu <- RunPCA(KC_seu, features = var_features, npcs = 100, approx = FALSE)
+
+plan("sequential")
+invisible(gc())
+```
+
+
+# Run Harmony
+
+```{r}
+library(harmony)
+KC_seu <- RunHarmony(KC_seu,
+                    group.by.vars = c("orig.ident", "experiment", "cell_nuclei"),
+					lambda = c(1,1,1),
+                    assay.use = "RNA")
+invisible(gc())
+```
+
+
+
+
+
+
+
+
+# Visualize
+
+## Plot PCA
+
+
+
+<!-- ```{r fig.width=8, fig.height=6} -->
+<!-- ElbowPlot(KC_seu, reduction = "harmony", ndims = 35) + -->
+<!--     geom_vline(xintercept = seq(5,35,5), linetype = "dashed", color = "grey40") + -->
+<!--     ylim(0,10) -->
+<!-- ``` -->
+
+
+
+
+```{r fig.width=12, fig.height=20, warning=FALSE, message=FALSE}
+library(colorspace)
+library(cowplot)
+p_list <- list()
+for (i in 1:10) {
+    p_list[[i]] <- DimHeatmap(KC_seu,
+                            reduction = "harmony",
+                            dims = i,
+                            cells = 500,
+                            balanced = TRUE,
+                            fast = FALSE) +
+        scale_fill_gradientn(colors = diverging_hcl(10, palette = "Vik"))
+}
+plot_grid(plotlist = p_list, ncol = 2)
+rm(p_list)
+invisible(gc())
+```
+
+
+## Run UMAP
+
+
+
+```{r}
+
+# test_pcs <- 60
+test_pcs <- seq(5, 35, 5)
+
+for (i in seq_along(test_pcs)) {
+    KC_seu <- RunUMAP(KC_seu, 
+		                    reduction = "harmony", 
+		                    dims = 1:test_pcs[[i]],
+		                    n.neighbors = 50,
+		                    n.epochs = 1000,
+		                    min.dist = 0.01,
+		                    spread = 5,
+		                    fast = FALSE,
+		                    verbose = TRUE,
+		                    reduction.name = paste0("umap_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("umap", test_pcs[[i]], "pcs_"))
+}
+
+KC_seu@reductions[["umap"]] <- KC_seu@reductions[["umap_20pcs"]]
+# write_rds(x = KC_seu, file = "../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# KC_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+
+```
+
+
+```{r}
+
+# for (i in seq_along(test_pcs)) {
+#     KC_seu <- RunTSNE(KC_seu,
+# 		                    reduction = "harmony",
+# 		                    num_threads = 24,
+# 		                    verbose = F,
+# 		                    dims = 1:test_pcs[[i]],
+# 		                    do.fast = FALSE,
+# 		                    check_duplicates = F,
+# 		                    max_iter = 10000,
+# 		                    theta = 0.05,
+# 		                    reduction.name = paste0("tsne_", test_pcs[[i]], "pcs"),
+# 		                    reduction.key = paste0("tsne", test_pcs[[i]], "pcs_"))
+# }
+# 
+# KC_seu@reductions[["tsne"]] <- KC_seu@reductions[["tsne_20pcs"]]
+# # write_rds(x = KC_seu, file = "../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# # KC_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+
+```
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = KC_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=8, fig.height=8}
+# for (test_pc in test_pcs) {
+#     plot(DimPlot(object = KC_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+# }
+```
+
+
+
+```{r fig.width=10, fig.height=10}
+col_list <- scales::hue_pal()(length(unique(KC_seu$experiment)))
+test_pc <- 20
+p <- list()
+for (i in 1:length(unique(KC_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = KC_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(KC_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(KC_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(KC_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+# col_list <- scales::hue_pal()(length(unique(KC_seu$experiment)))
+# test_pc <- 20
+# p <- list()
+# for (i in 1:length(unique(KC_seu@meta.data[["experiment"]]))) {
+#   p[[i]] <- DimPlot(object = KC_seu,
+#                     reduction = paste0("tsne_", test_pc, "pcs"),
+#                     group.by = "experiment",
+#                     pt.size = 0.4,
+#                     order = c(unique(KC_seu@meta.data[["experiment"]])[i]),
+#                     cols = c(rep("lightgrey",length(unique(KC_seu$experiment)) - 1),col_list[[i]])) +
+#                 NoLegend() +
+#                 NoAxes() +
+#                 coord_fixed() +
+#                 ggtitle(unique(KC_seu@meta.data[["experiment"]])[i])
+# }
+# plot_grid(plotlist = p, ncol = 3)
+```
+
+
+```{r}
+FetchData(object = KC_seu, vars = "experiment") %>% 
+    dplyr::count(experiment)
+```
+
+
+
+```{r fig.width=16, fig.height=8}
+genes <- c("nFeature_RNA","nCount_RNA")
+FeaturePlot(object = KC_seu, 
+           features = genes,
+           ncol = 2,
+           pt.size = 0.4, 
+           cols = c("lightsteelblue2", "black"),
+           max.cutoff = 10000,
+           reduction = "umap_20pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE)
+```
+
+
+```{r fig.width=16, fig.height=16}
+genes <- c("Imp", "dati", "br", "pdm3")
+FeaturePlot(object = KC_seu, 
+           features = genes,
+           # split.by = "sex",
+			# min.cutoff = 4,
+           pt.size = 1, 
+           cols = c("lightsteelblue2", "black"),
+           reduction = "umap_20pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE)
+```
+
+
+
+```{r fig.width=16, fig.height=16}
+genes <- c("hec", "Lgr3")
+FeaturePlot(object = KC_seu, 
+           features = genes,
+           # split.by = "sex",
+			# min.cutoff = 4,
+           pt.size = 1, 
+           cols = c("lightsteelblue2", "black"),
+           reduction = "umap_20pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE)
+```
+
+
+
+
+
+
+```{r fig.width=6, fig.height=6}
+
+genes <- c("Fer2", "TfAP-2", "sv", "unc-4", "bsh", "inv")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.4, 
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.width=6, fig.height=6}
+
+genes <- c("Fer2", "Optix", "salr", "salm", "Hr51", "otp")
+plist <- FeaturePlot(
+    object = KC_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.4, 
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+# Clustering
+
+```{r}
+KC_seu <- FindNeighbors(KC_seu,
+                       reduction = "harmony",
+                       dims = 1:20,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+# in_conda <- R.home() %>% str_detect("R4_cbrg")
+# if (in_conda) {
+#     algorithm_use <- 4
+# } else {
+    algorithm_use <- 1
+# }
+
+KC_seu <- FindClusters(KC_seu,
+                        algorithm = algorithm_use,
+                        resolution = c(0.1,0.2,0.5,1,1.5,2,3,4,5,6,8,10),
+                        verbose = TRUE)
+```
+
+
+
+```{r}
+write_rds(x = KC_seu, file = "../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# KC_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+```
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(KC_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = KC_seu, group.by = res[[i]],
+                           reduction = "umap_20pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(KC_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = KC_seu, group.by = res[[i]],
+                           reduction = "umap_20pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = KC_seu, 
+		group.by = "RNA_snn_res.4",
+		split.by = "sex",
+        reduction = "umap_20pcs", 
+        label = FALSE, 
+        label.box = TRUE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(KC_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = KC_seu, group.by = res[[i]],
+                           reduction = "umpa_20pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(KC_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = KC_seu, group.by = res[[i]],
+                           reduction = "umpa_20pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+```{r fig.width=10}
+FetchData(object = KC_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment, RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "stack")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = KC_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment,RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill") #+
+        #geom_hline(yintercept = 0.5, colour = "white")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = KC_seu, vars = c("experiment", "cell_nuclei", "RNA_snn_res.4")) %>% 
+    dplyr::count(cell_nuclei, RNA_snn_res.4) %>%
+    # mutate(region = if_else(experiment %in% c("aging", "cocaine"),"WB","CB")) %>%  
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = cell_nuclei)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.5, colour = "white")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = KC_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(sex, RNA_snn_res.4) %>%
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = sex)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.5, colour = "white")
+```
+
+
+```{r}
+FetchData(object = KC_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(RNA_snn_res.4, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+```{r}
+FetchData(object = KC_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(experiment, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Cell Remove
+
+
+<!-- ## Round 1 -->
+
+
+
+
+
+<!-- ```{r fig.width=15, fig.height=10} -->
+<!-- DimPlot(object = KC_seu,  -->
+<!-- 		group.by = "RNA_snn_res.4", -->
+<!-- 		# split.by = "sex", -->
+<!--         reduction = "umap_20pcs",  -->
+<!--         label = TRUE,  -->
+<!--         label.box = FALSE) +  -->
+<!--     NoLegend() +  -->
+<!--     coord_fixed() -->
+<!-- DimPlot(object = KC_seu,  -->
+<!-- 		group.by = "RNA_snn_res.5", -->
+<!-- 		# split.by = "sex", -->
+<!--         reduction = "umap_20pcs",  -->
+<!--         label = TRUE,  -->
+<!--         label.box = FALSE) +  -->
+<!--     NoLegend() +  -->
+<!--     coord_fixed() -->
+<!-- DimPlot(object = KC_seu,  -->
+<!-- 		group.by = "RNA_snn_res.6", -->
+<!-- 		# split.by = "sex", -->
+<!--         reduction = "umap_20pcs",  -->
+<!--         label = TRUE,  -->
+<!--         label.box = FALSE) +  -->
+<!--     NoLegend() +  -->
+<!--     coord_fixed() -->
+<!-- DimPlot(object = KC_seu,  -->
+<!-- 		group.by = "RNA_snn_res.8", -->
+<!-- 		# split.by = "sex", -->
+<!--         reduction = "umap_20pcs",  -->
+<!--         label = TRUE,  -->
+<!--         label.box = FALSE) +  -->
+<!--     NoLegend() +  -->
+<!--     coord_fixed() -->
+<!-- DimPlot(object = KC_seu,  -->
+<!-- 		group.by = "RNA_snn_res.10", -->
+<!-- 		# split.by = "sex", -->
+<!--         reduction = "umap_20pcs",  -->
+<!--         label = TRUE,  -->
+<!--         label.box = FALSE) +  -->
+<!--     NoLegend() +  -->
+<!--     coord_fixed() -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- cell_remove <- FetchData( -->
+<!--         object = KC_seu,  -->
+<!--         vars = c("RNA_snn_res.4", "RNA_snn_res.5", "RNA_snn_res.6", -->
+<!--                  "RNA_snn_res.8", "RNA_snn_res.10")) %>% -->
+<!--     rownames_to_column("cell_id") %>% -->
+<!--     filter(RNA_snn_res.4 == 16 | -->
+<!--            RNA_snn_res.5 %in% c(16,17,19) | -->
+<!--            RNA_snn_res.6 %in% c(19,20,21) | -->
+<!--            RNA_snn_res.8 %in% c(21,22,23,24,25) | -->
+<!--            RNA_snn_res.10 %in% c(22,24,37,44,43,32) -->
+<!--            ) -->
+<!-- ``` -->
+
+
+
+
+
+<!-- ```{r fig.width=6, fig.height=6} -->
+
+<!-- DimPlot(object = KC_seu, -->
+<!-- 			  cells.highlight = cell_remove$cell_id, -->
+<!-- 			  sizes.highlight = 0.4, -->
+<!-- 			  cols.highlight = "black", -->
+<!-- 			  cols = "lightsteelblue2", -->
+<!--         reduction = "umap_20pcs", -->
+<!--         pt.size = 0.4, -->
+<!--         raster = FALSE, -->
+<!--         label = FALSE, -->
+<!--         label.box = FALSE, -->
+<!--         repel = TRUE) + -->
+<!--     # NoAxes() + -->
+<!--     NoLegend() + -->
+<!--     coord_fixed() -->
+
+
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- cells_to_keep <- FetchData(object = KC_seu, vars = c("RNA_snn_res.1")) %>% -->
+<!--     rownames_to_column("cell_id") %>% -->
+<!--     filter(!cell_id %in% cell_remove$cell_id) -->
+<!-- cells_to_keep -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- write_csv(x = cells_to_keep, file = "../../proj136/analyses/cell_lists/subclustering_KC_metablob_cells_to_keep--round1.csv") -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+# Save
+
+
+```{r}
+getwd()
+```
+
+
+```{r}
+write_rds(x = KC_seu, file = "../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# KC_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# KC_seu
+```
+
+
+
+
+
+
+
+
+# Markers
+
+
+```{r}
+Idents(KC_seu) <- "RNA_snn_res.2"
+markers_pC1 <- FindAllMarkers(object = KC_seu, assay = "RNA", test.use = "wilcox",only.pos = TRUE)
+markers_pC1
+```
+
+
+```{r}
+write_csv(x = markers_pC1, file = "../../proj136/analyses/markers/subclustering_pC1--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+# markers_pC1 <- read_csv(file = "../../proj136/analyses/markers/subclustering_pC1--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+markers_pC1
+```
+
+
+
+
+
+
+
+
+
+```{r fig.width=10, fig.height=10}
+markers_pC1 %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(KC_seu, features = top10$gene) + 
+    scale_fill_continuous_diverging(palette = "Vik", rev = FALSE,
+                                    limits = c(-2,2), oob = scales::squish,
+                                    na.value = "white") +
+    NoLegend()
+```
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

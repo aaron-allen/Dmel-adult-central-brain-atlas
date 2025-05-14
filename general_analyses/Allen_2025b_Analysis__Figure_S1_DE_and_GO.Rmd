@@ -1,0 +1,1858 @@
+---
+title: "Allen_2025b_Analysis___Figure_S1_DE_and_GO"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_classic())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      text = ggplot2::element_text(family = "Arial")
+                      )
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 100,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(colorspace)
+library(tidyverse)
+```
+
+
+
+
+
+
+
+# Functions
+
+
+
+## plot_sex_bias_GO_analysis
+
+```{r}
+
+filter_and_run_sex_bias_GO_analysis <- function(
+        de_df = NULL,                        # data frame of differential expression
+        pval_thres = 0.05,                   # threshold cutoff of adjusted p-value
+        log_fc_thres = 0.5,                  # threshold cutoff for log fold change
+        which_sex = "female",                # 
+        # log_fc_negative = FALSE,             # TRUE for negative logFC gene, ie male-biased
+        # genes_to_keep = NULL,                # specified vector of genes to remove   
+        # fg_genes = NULL,                    # vector of differentially expressed genes
+        bg_genes = NULL,                     # vector of background genes
+        use_bg_genes = FALSE,                # whether to use background genes or not                 
+        ontology_catagory = "BP",            # one of "BP", "MF", "CC"
+        org_db = "org.Dm.eg.db",             # drosophila melanogaster
+        key_type = "SYMBOL"                  # using gene symbol for now
+    ){
+    
+    library(clusterProfiler)
+    library(org.Dm.eg.db)
+    library(AnnotationDbi)
+    
+    sig_symbol <- de_df %>% 
+        dplyr::filter(padj < pval_thres) %>%
+        dplyr::mutate(log2FoldChange = if (which_sex == "male") -log2FoldChange else log2FoldChange) %>%
+        dplyr::filter(log2FoldChange > log_fc_thres) %>% 
+    	dplyr::select(Gene) %>% 
+    	unique()
+    # sig_symbol    
+    
+    go_results_bp_deg <- clusterProfiler::enrichGO(gene = sig_symbol$Gene, OrgDb = org_db, universe = bg_genes, keyType = key_type, ont = ontology_catagory)
+    return(go_results_bp_deg)
+    
+}
+
+
+
+plot_sex_bias_GO_analysis <- function(
+        de_df = NULL,                        # data frame of differential expression
+        pval_thres = 0.05,                   # threshold cutoff of adjusted p-value
+        log_fc_thres = 0.5,                  # threshold cutoff for log fold change
+        which_sex = "female",                #
+        # log_fc_negative = FALSE,             # TRUE for negative logFC gene, ie male-biased
+        # genes_to_keep = NULL,                # specified vector of genes to remove
+        # fg_genes = NULL,                    # vector of differentially expressed genes
+        bg_genes = NULL,                     # vector of background genes
+        use_bg_genes = FALSE,                # whether to use background genes or not
+        ontology_catagory = "BP",            # one of "BP", "MF", "CC"
+        org_db = "org.Dm.eg.db",             # drosophila melanogaster
+        key_type = "SYMBOL"                  # using gene symbol for now
+    ){
+
+    library(clusterProfiler)
+    library(org.Dm.eg.db)
+    library(AnnotationDbi)
+
+    sig_symbol <- de_df %>%
+        dplyr::filter(padj < pval_thres) %>%
+        dplyr::mutate(log2FoldChange = if (which_sex == "male") -log2FoldChange else log2FoldChange) %>%
+        dplyr::filter(log2FoldChange > log_fc_thres) %>%
+    	dplyr::select(Gene) %>%
+    	unique()
+    # sig_symbol
+
+    go_results_bp_deg <- clusterProfiler::enrichGO(gene = sig_symbol$Gene, OrgDb = org_db, universe = bg_genes, keyType = key_type, ont = ontology_catagory)
+    go_results_bp_deg_df <- as.data.frame(go_results_bp_deg) %>% dplyr::arrange(qvalue)
+    p1 <- dotplot(go_results_bp_deg, orderBy = "x", showCategory = 20) +
+        labs(
+            title = paste0(which_sex, " -- ", ontology_catagory),
+            subtitle = paste0(
+                "FC cutoff = ", log_fc_thres,
+                "; p-value cutoff = ", pval_thres
+            ),
+            caption = paste0(
+                "Use bg gene = ", use_bg_genes
+            )
+        )
+
+    # return(go_results_bp_deg)
+    print(go_results_bp_deg_df)
+    plot(p1)
+
+}
+```
+
+
+## plot_multi_gene_sex_bias_boxplot_across_celltype
+
+
+```{r}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype <- function(
+    object,
+    features = NULL,
+    order_features = FALSE,
+    grouping_condition = "subcluster_clusters",
+    comparison_condition = "sex",
+    data_slot = "counts",
+    facet_plot = FALSE,
+    facet_by = "experiment",
+    y_limit = NULL,
+    col_limit = NULL,
+    midpoint_colour = "black"
+    ){
+    
+    
+    temp_data <- FetchData(object, vars = c(features, grouping_condition, comparison_condition, facet_by), slot = data_slot) %>%
+        tibble::rownames_to_column("cell_id") %>% 
+        dplyr::rename("my_grouping" = (!!grouping_condition)) %>% 
+        dplyr::rename("my_comparison" = (!!comparison_condition)) %>% 
+        dplyr::rename("my_facet" = (!!facet_by)) %>% 
+        dplyr::filter(!my_facet %in% c("sleep", "species")) %>% 
+        tidyr::gather("gene", "counts", -cell_id, -my_grouping, -my_comparison, -my_facet)
+    
+    if (data_slot == "data") {
+        temp_data <- temp_data %>%
+            dplyr::mutate(counts = exp(counts))
+    }
+    # print(max(temp_data$counts))
+    
+    temp_result <- temp_data %>%
+        dplyr::group_by(my_grouping, my_comparison, gene) %>%
+        # dplyr::summarize(total_feature = sum(counts, na.rm = TRUE), .groups = "drop") %>%
+        dplyr::summarize(total_feature = mean(counts, na.rm = TRUE), .groups = "drop") %>%
+        tidyr::pivot_wider(names_from = my_comparison, values_from = total_feature, values_fill = list(total_feature = 0)) %>%
+        dplyr::mutate(log2_ratio = log2((female + 0.1) / (male + 0.1)))
+    # temp_result
+    
+    temp_result_1 <- temp_result %>%
+        dplyr::group_by(gene) %>%
+        dplyr::summarize(mean_ratio = mean(log2_ratio, na.rm = TRUE), .groups = "drop") %>%
+        dplyr::arrange(mean_ratio) %>%
+        dplyr::mutate(gene = factor(gene, levels = unique(gene)))
+    
+    if (order_features) {
+        temp_result$gene <- factor(temp_result$gene, levels = temp_result_1$gene)
+    } else {
+        temp_result$gene <- factor(temp_result$gene, levels = features)
+    }
+    
+    y_limit_calc <- temp_result %>% 
+        dplyr::filter(!my_grouping %in% c("Achl_003", "Achl_008", "Achl_058", "Glut_058", "GABA_012")) %>% 
+        pull(log2_ratio) %>% abs() %>% max() %>% ceiling()
+    if (is.null(y_limit)) {
+        y_limit <- max(2, y_limit_calc)
+    }
+    if (is.null(col_limit)) {
+        col_limit <- 1
+    }
+    
+    p1 <- temp_result %>% 
+        dplyr::group_by(gene) %>% 
+        dplyr::mutate(mean_log_ratio = mean(log2_ratio)) %>% 
+        ggplot(aes(x = gene, y = log2_ratio)) +
+            geom_hline(yintercept = 0, linetype = "dashed") +
+            geom_boxplot(aes(fill = mean_log_ratio), outlier.size = -1) +
+            scale_fill_gradientn(
+                colours = c("#00bfc4", midpoint_colour, "#c77cff"),
+                limits = c(-col_limit,col_limit),
+                oob = scales::squish
+            ) +
+            ylim(-y_limit, y_limit) +
+            # labs(
+            #     x = grouping_condition, 
+            #     y = paste0("log2(Female ", feature, " / Male ", feature, ")")
+            # ) +
+            # theme_classic() +
+            theme(
+                axis.title.x = element_blank(),
+                axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+            )
+    return(p1)
+}
+
+
+```
+
+
+
+## plot_multi_gene_sex_bias_boxplot_across_experiment
+
+
+```{r}
+
+plot_multi_gene_sex_bias_boxplot_across_experiment <- function(
+    object,
+    features = NULL,
+    order_features = FALSE,
+    grouping_condition = "experiment",
+    comparison_condition = "sex",
+    data_slot = "counts",
+    y_limit = NULL,
+    col_limit = NULL,
+    midpoint_colour = "black"
+    ){
+    
+    
+    temp_data <- FetchData(meta_cb, vars = c(features, grouping_condition, comparison_condition), slot = data_slot) %>%
+        tibble::rownames_to_column("cell_id") %>% 
+        dplyr::rename("my_grouping" = (!!grouping_condition)) %>% 
+        dplyr::rename("my_comparison" = (!!comparison_condition)) %>% 
+        # dplyr::rename("my_facet" = (!!facet_by)) %>% 
+        dplyr::filter(!my_grouping %in% c("sleep", "species")) %>% 
+        tidyr::gather("gene", "counts", -cell_id, -my_grouping, -my_comparison)
+
+    if (data_slot == "data") {
+        temp_data <- temp_data %>% 
+            dplyr::mutate(counts = exp(counts))
+    }
+    
+    temp_result <- temp_data %>%
+        dplyr::group_by(my_grouping, my_comparison, gene) %>%
+        dplyr::summarize(total_feature = sum(counts, na.rm = TRUE), .groups = "drop") %>%
+        # dplyr::summarize(total_feature = mean(counts, na.rm = TRUE), .groups = "drop") %>%
+        tidyr::pivot_wider(names_from = my_comparison, values_from = total_feature, values_fill = list(total_feature = 0)) %>%
+        dplyr::mutate(log2_ratio = log2((female + 0.1) / (male + 0.1)))
+
+    temp_result_1 <- temp_result %>%
+        dplyr::group_by(gene) %>%
+        dplyr::summarize(median_ratio = median(log2_ratio, na.rm = TRUE), .groups = "drop") %>%
+        dplyr::arrange(median_ratio) %>%
+        dplyr::mutate(gene = factor(gene, levels = unique(gene)))
+
+    if (order_features) {
+        temp_result$gene <- factor(temp_result$gene, levels = temp_result_1$gene)
+    } else {
+        temp_result$gene <- factor(temp_result$gene, levels = features)
+    }
+    
+    if (is.null(y_limit)) {
+        y_limit <- max(2, max(temp_result$log2_ratio))
+    }
+    if (is.null(col_limit)) {
+        col_limit <- 1
+    }
+
+    p1 <- temp_result %>% 
+        dplyr::group_by(gene) %>% 
+        dplyr::mutate(median_log_ratio = median(log2_ratio)) %>% 
+        ggplot(aes(x = gene, y = log2_ratio)) +
+            geom_hline(yintercept = 0, linetype = "dashed") +
+            geom_boxplot(aes(fill = median_log_ratio), outlier.size = -1) +
+            scale_fill_gradientn(
+                colours = c("#00bfc4", midpoint_colour, "#c77cff"),
+                limits = c(-col_limit,col_limit),
+                oob = scales::squish
+            ) +
+            ylim(-y_limit, y_limit) +
+            # labs(
+            #     x = grouping_condition, 
+            #     y = paste0("log2(Female ", feature, " / Male ", feature, ")")
+            # ) +
+            # theme_classic() +
+            theme(
+                axis.title.x = element_blank(),
+                axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+            )
+    return(p1)
+}
+
+
+```
+
+
+
+
+
+
+
+
+# Load data
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+DefaultAssay(meta_cb) <- "RNA"
+Idents(meta_cb) <- "subcluster_clusters"
+meta_cb
+```
+
+
+
+```{r}
+options(scipen = 1)
+deg_list <- list()
+deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_deseq_df_2.csv", col_types = cols())
+```
+
+
+
+
+# Gene Filtering
+
+
+
+## iso and trans genes
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4"
+)
+```
+
+
+
+## dataset specific genes
+
+
+### load pre-calc. counts
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent <- read_csv(file = "../../proj136/analyses/all_gene_max_sum__by_exp_wPercent.csv")
+# head(all_gene_max_sum__by_exp_together_wPercent)
+
+all_gene_max_sum <- read_csv(file = "../../proj136/analyses/all_gene_max_sum.csv")
+# head(all_gene_max_sum)
+```
+
+
+
+### filter candidates
+
+```{r}
+genes_adfca_gt_30p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(Dataset == "adfca") %>%
+    dplyr::filter(percent_dataset > 30) %>%
+    pull(RowName)
+# length(genes_adfca_gt_30p)
+
+genes_any_gt_60p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(percent_dataset > 60) %>% 
+    pull(RowName) %>% 
+    unique()
+# length(genes_any_gt_60p)
+
+genes_low_exp <- all_gene_max_sum %>%
+    dplyr::filter(RowSum < 400) %>% 
+    dplyr::filter(RowMax < 4) %>% 
+    pull(RowName) %>% 
+    unique()
+# length(genes_low_exp)
+
+genes_remove <- sort(unique(c(genes_adfca_gt_30p, genes_any_gt_60p, genes_low_exp)))
+# length(genes_remove)
+
+genes_sexed_dataset <- all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    dplyr::filter(sexed_dataset_counts > 45) %>% 
+    pull(RowName)
+# length(genes_sexed_dataset)
+```
+
+
+## filter deg list
+
+```{r}
+deg_gene_filtered <- deg_list[["zinb-deseq"]] %>%
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset)
+deg_gene_filtered
+```
+
+
+
+
+
+
+
+# GO
+
+
+
+
+```{r}
+# write_csv(x = data.frame(gene = result), file = "../../proj136/analyses/all_expressed_genes.csv")
+all_detected_genes <- read_csv(file = "../../proj136/analyses/all_expressed_genes.csv")
+all_detected_genes
+```
+
+
+
+```{r}
+expressed_genes <- data.frame(Gene = rownames(meta_cb)) %>% 
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset) %>%
+    dplyr::filter(Gene %in% all_detected_genes$gene) %>% 
+    dplyr::rename("gene" = "Gene")
+expressed_genes
+```
+
+
+
+
+```{r}
+deg_gene_filtered %>% 
+    filter(padj < 0.01) %>%
+    filter((log2FoldChange) > 1) %>% 
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset) %>% 
+    pull(Gene) %>% 
+    unique() %>% 
+    sort() %>% 
+    cat(sep = " ")
+```
+
+
+
+```{r}
+deg_gene_filtered %>% 
+    filter(padj < 0.01) %>%
+    filter((log2FoldChange) < -1) %>% 
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset) %>% 
+    pull(Gene) %>% 
+    unique() %>% 
+    sort() %>% 
+    cat(sep = " ")
+```
+
+
+
+
+```{r}
+library(clusterProfiler)
+library(org.Dm.eg.db)
+library(AnnotationDbi)
+```
+
+
+
+<!-- ```{r} -->
+<!-- FBgn_to_symbol <- read_csv("../../../aallen/genomes/dmel/FBgn_to_symbol.csv") -->
+<!-- FBgn_to_symbol -->
+<!-- ``` -->
+
+
+
+## Bg correction
+
+```{r}
+curr_use_bg_genes = TRUE
+```
+
+
+### stringent
+
+
+```{r}
+curr_pval_thres = 0.01 
+curr_log_fc_thres = 1
+```
+
+
+#### female biased
+
+```{r}
+curr_which_sex = "female" 
+```
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+
+#### male biased
+
+```{r}
+curr_which_sex = "male" 
+```
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+### relaxed
+
+```{r}
+curr_pval_thres = 0.05 
+curr_log_fc_thres = 0.5
+```
+
+
+#### female biased
+
+
+```{r}
+curr_which_sex = "female" 
+```
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+
+#### male biased
+
+
+```{r}
+curr_which_sex = "male" 
+```
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+## no Bg correction
+
+```{r}
+curr_use_bg_genes = FALSE
+```
+
+
+
+### stringent
+
+
+```{r}
+curr_pval_thres = 0.01 
+curr_log_fc_thres = 1
+```
+
+
+#### female biased
+
+```{r}
+curr_which_sex = "female" 
+```
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+
+#### male biased
+
+```{r}
+curr_which_sex = "male" 
+```
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+### relaxed
+
+```{r}
+curr_pval_thres = 0.05 
+curr_log_fc_thres = 0.5
+```
+
+
+#### female biased
+
+
+```{r}
+curr_which_sex = "female" 
+```
+
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+
+#### male biased
+
+
+```{r}
+curr_which_sex = "male" 
+```
+
+##### BP
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "BP"
+)
+```
+
+
+
+
+##### MF
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "MF"
+)
+```
+
+##### CC
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=6, fig.width=10}
+plot_sex_bias_GO_analysis(
+    de_df = deg_gene_filtered, 
+    pval_thres = curr_pval_thres, 
+    log_fc_thres = curr_log_fc_thres, 
+    use_bg_genes = curr_use_bg_genes, 
+    bg_genes = expressed_genes$gene, 
+    which_sex = curr_which_sex, 
+    ontology_catagory = "CC"
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Plot repeat offenders
+
+```{r fig.height=8, fig.width=6}
+deg_gene_filtered %>%
+    dplyr::filter(padj < 0.01) %>% 
+    dplyr::count(Gene) %>% 
+    dplyr::arrange(n) %>%
+    dplyr::mutate(Gene = factor(Gene, levels = unique(Gene))) %>% 
+    dplyr::filter(n > 20) %>% 
+    ggplot(aes(x = n, y = Gene)) +
+        geom_bar(stat = "identity", fill = "#bcd2ee") +
+        theme_classic() +
+        theme(
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank()
+        ) +
+        ggtitle("Number of cell types each gene is Sig Diff -- stringent")
+```
+
+
+```{r}
+genes <- deg_gene_filtered %>%
+    dplyr::filter(padj < 0.01) %>% 
+    dplyr::count(Gene) %>% 
+    dplyr::arrange(n) %>%
+    dplyr::mutate(Gene = factor(Gene, levels = unique(Gene))) %>% 
+    dplyr::filter(n > 20) %>% 
+    pull(Gene) %>% 
+    as.character()
+genes
+```
+
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = genes, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = NULL,
+    col_limit = 1,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=2.5, fig.height=4}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = c("lncRNA:roX1", "lncRNA:roX2"),
+    order_features = TRUE, 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 10,
+    col_limit = 1,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=12, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = dplyr::setdiff(genes, c("lncRNA:roX1", "lncRNA:roX2")), 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1.4,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+# ribo genes
+
+```{r}
+ribo_genes <- meta_cb %>% rownames() %>% str_subset(pattern = "^Rp[L|S]")
+ribo_genes
+```
+
+```{r}
+length(ribo_genes)
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=14, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = ribo_genes, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.2,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+
+
+
+```{r}
+mito_ribo_genes <- meta_cb %>% rownames() %>% str_subset(pattern = "^mRp[L|S]")
+mito_ribo_genes
+```
+
+```{r}
+length(mito_ribo_genes)
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=12, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = mito_ribo_genes, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.2,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+
+```{r}
+all_ribo_genes <- meta_cb %>% rownames() %>% str_subset(pattern = "Rp[L|S]")
+all_ribo_genes
+```
+
+```{r}
+length(all_ribo_genes)
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = all_ribo_genes, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.2,
+    midpoint_colour = "white"
+    ) +
+    ggtitle("Ribosomal Subunits")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# mito genes
+
+```{r}
+FBgn_to_symbol <- read_csv("../../../aallen/genomes/dmel/FBgn_to_symbol.csv")
+FBgn_to_symbol
+```
+
+
+
+```{r}
+mito_complex_I_FBgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_mito_complex_I.csv") %>% pull(FBgn)
+mito_complex_I_FBgn
+```
+
+
+```{r}
+mito_complex_I_sym <- FBgn_to_symbol %>% 
+    dplyr::filter(FBgn %in% mito_complex_I_FBgn) %>% 
+    dplyr::select(gene_symbol_r6.30) %>% 
+    dplyr::pull(gene_symbol_r6.30) %>% 
+    sort()
+mito_complex_I_sym
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=8, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = mito_complex_I_sym, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+## Complex II
+
+```{r}
+mito_complex_II_FBgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_mito_complex_II.csv") %>% pull(FBgn)
+mito_complex_II_FBgn
+```
+
+
+```{r}
+mito_complex_II_sym <- FBgn_to_symbol %>% 
+    dplyr::filter(FBgn %in% mito_complex_II_FBgn) %>% 
+    dplyr::select(gene_symbol_r6.30) %>% 
+    dplyr::pull(gene_symbol_r6.30) %>% 
+    sort()
+mito_complex_II_sym
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=3, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = mito_complex_II_sym, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+## Complex III
+
+```{r}
+mito_complex_III_FBgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_mito_complex_III.csv") %>% pull(FBgn)
+mito_complex_III_FBgn
+```
+
+
+```{r}
+mito_complex_III_sym <- FBgn_to_symbol %>% 
+    dplyr::filter(FBgn %in% mito_complex_III_FBgn) %>% 
+    dplyr::select(gene_symbol_r6.30) %>% 
+    dplyr::pull(gene_symbol_r6.30) %>% 
+    sort()
+mito_complex_III_sym
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=6, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = mito_complex_III_sym,
+    order_features = TRUE, 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+## Complex IV
+
+```{r}
+mito_complex_IV_FBgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_mito_complex_IV.csv") %>% pull(FBgn)
+mito_complex_IV_FBgn
+```
+
+
+```{r}
+mito_complex_IV_sym <- FBgn_to_symbol %>% 
+    dplyr::filter(FBgn %in% mito_complex_IV_FBgn) %>% 
+    dplyr::select(gene_symbol_r6.30) %>% 
+    dplyr::pull(gene_symbol_r6.30) %>% 
+    sort()
+mito_complex_IV_sym
+```
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=6, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = mito_complex_IV_sym, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+## Complex V
+
+```{r}
+mito_complex_V_FBgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_mito_complex_V.csv") %>% pull(FBgn)
+mito_complex_V_FBgn
+```
+
+
+```{r}
+mito_complex_V_sym <- FBgn_to_symbol %>% 
+    dplyr::filter(FBgn %in% mito_complex_V_FBgn) %>% 
+    dplyr::select(gene_symbol_r6.30) %>% 
+    dplyr::pull(gene_symbol_r6.30) %>% 
+    sort()
+mito_complex_V_sym
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=6, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = mito_complex_V_sym,
+    order_features = TRUE, 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+## all complexes
+
+```{r}
+genes <- c(mito_complex_I_sym, mito_complex_II_sym, mito_complex_III_sym, mito_complex_IV_sym, mito_complex_V_sym)
+length(genes)
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+        object = meta_cb, 
+        feature = genes, 
+        order_features = TRUE,
+        grouping_condition = "subcluster_clusters", 
+        comparison_condition = "sex", 
+        data_slot = "counts", 
+        facet_plot = FALSE, 
+        facet_by = "experiment",
+        y_limit = 1,
+        col_limit = 0.4,
+        midpoint_colour = "white"
+    ) +
+    ggtitle("Mitochondrial Complex I-V")
+
+```
+
+
+
+# neg. controls
+
+other sets of genes
+
+## Nuclear pore
+
+
+
+<!-- ```{r} -->
+<!-- FBgn_to_symbol <- read_csv("../../../aallen/genomes/dmel/FBgn_to_symbol.csv") -->
+<!-- FBgn_to_symbol -->
+<!-- ``` -->
+
+
+
+```{r}
+npc_FBgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_nuclear_pore_complex.csv") %>% pull(FBgn)
+npc_FBgn
+```
+
+
+```{r}
+npc_sym <- FBgn_to_symbol %>% 
+    dplyr::filter(FBgn %in% npc_FBgn) %>% 
+    dplyr::select(gene_symbol_r6.30) %>% 
+    dplyr::pull(gene_symbol_r6.30) %>% 
+    sort()
+npc_sym
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=8, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = npc_sym, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+## voltage gated ion channel subunits
+
+
+
+<!-- ```{r} -->
+<!-- FBgn_to_symbol <- read_csv("../../../aallen/genomes/dmel/FBgn_to_symbol.csv") -->
+<!-- FBgn_to_symbol -->
+<!-- ``` -->
+
+
+
+```{r}
+vgics_FBgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_voltage_gated_ion_channel_subunits.csv") %>% pull(FBgn)
+vgics_FBgn
+```
+
+
+```{r}
+vgics_sym <- FBgn_to_symbol %>% 
+    dplyr::filter(FBgn %in% vgics_FBgn) %>% 
+    dplyr::select(gene_symbol_r6.30) %>% 
+    dplyr::pull(gene_symbol_r6.30) %>% 
+    sort()
+vgics_sym
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=8, fig.height=3}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = vgics_sym, 
+    order_features = TRUE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 1,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# nCount_RNA
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=4, fig.height=6}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+        object = meta_cb, 
+        feature = c("nCount_RNA", "nFeature_RNA"), 
+        order_features = TRUE,
+        grouping_condition = "subcluster_clusters", 
+        comparison_condition = "sex", 
+        data_slot = "counts", 
+        facet_plot = FALSE, 
+        facet_by = "experiment",
+        y_limit = 0.4,
+        col_limit = 0.2,
+        midpoint_colour = "white"
+    )
+
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=4, fig.height=6}
+
+plot_multi_gene_sex_bias_boxplot_across_experiment(
+    object = meta_cb, 
+    feature = c("nCount_RNA", "nFeature_RNA"), 
+    order_features = FALSE,
+    grouping_condition = "experiment", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    y_limit = 0.2,
+    col_limit = 0.1,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# SDH
+
+
+## across cell type
+
+```{r}
+genes <- c(
+    "Sxl", "ssx", "tra", "tra2", #"fru", "dsx",
+    "mle", "mof", "msl-1", "msl-2", "msl-3"
+)
+```
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=4, fig.height=4}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+        object = meta_cb, 
+        feature = genes, 
+        order_features = FALSE,
+        grouping_condition = "subcluster_clusters", 
+        comparison_condition = "sex", 
+        data_slot = "counts", 
+        facet_plot = FALSE, 
+        facet_by = "experiment",
+        y_limit = 1.4,
+        col_limit = 0.4,
+        midpoint_colour = "white"
+    ) +
+    labs(
+        caption = "counts"
+    )
+
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+        object = meta_cb, 
+        feature = genes, 
+        order_features = FALSE,
+        grouping_condition = "subcluster_clusters", 
+        comparison_condition = "sex", 
+        data_slot = "data", 
+        facet_plot = FALSE, 
+        facet_by = "experiment",
+        y_limit = 1.4,
+        col_limit = 0.4,
+        midpoint_colour = "white"
+    ) +
+    labs(
+        caption = "data"
+    )
+
+```
+
+
+
+```{r}
+
+t_list <- list()
+w_list <- list()
+for (i in seq_along(genes)) {
+
+    temp_data <- FetchData(meta_cb, vars = c(genes[[i]], "subcluster_clusters", "sex", "experiment"), slot = "counts") %>%
+        tibble::rownames_to_column("cell_id") %>%
+        dplyr::filter(!experiment %in% c("sleep", "species")) %>%
+        tidyr::gather("gene", "counts", -cell_id, -subcluster_clusters, -sex, -experiment)
+    
+    temp_result <- temp_data %>%
+        dplyr::group_by(subcluster_clusters, sex, gene) %>%
+        # dplyr::summarize(total_feature = sum(counts, na.rm = TRUE), .groups = "drop") %>%
+        dplyr::summarize(total_feature = mean(counts, na.rm = TRUE), .groups = "drop") %>%
+        tidyr::pivot_wider(names_from = sex, values_from = total_feature, values_fill = list(total_feature = 0)) %>%
+        dplyr::mutate(log2_ratio = log2((female + 0.1) / (male + 0.1)))
+    
+    
+    t_list[[i]] <- t.test(temp_result$log2_ratio)
+    w_list[[i]] <- wilcox.test(temp_result$log2_ratio)
+
+    
+}
+names(t_list) <- genes
+names(w_list) <- genes
+
+```
+
+```{r}
+
+all_pvals <- c()
+for (i in seq_along(genes)) {
+    all_pvals[[i]] <- t_list[[genes[[i]]]]$p.value
+}
+p.adjust(p = all_pvals, method = "bonf")
+p.adjust(p = all_pvals, method = "holm")
+
+```
+
+
+```{r}
+
+all_pvals <- c()
+for (i in seq_along(genes)) {
+    all_pvals[[i]] <- w_list[[genes[[i]]]]$p.value
+}
+p.adjust(p = all_pvals, method = "bonf")
+p.adjust(p = all_pvals, method = "holm")
+
+```
+
+
+
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=2.6, fig.height=5}
+
+plot_multi_gene_sex_bias_boxplot_across_celltype(
+    object = meta_cb, 
+    feature = c("lncRNA:roX1", "lncRNA:roX2"), 
+    order_features = FALSE,
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    y_limit = 10,
+    col_limit = 0.4,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+## across experiment
+
+```{r message=FALSE, warning=FALSE, fig.width=4, fig.height=6}
+
+plot_multi_gene_sex_bias_boxplot_across_experiment(
+    object = meta_cb, 
+    feature = genes, 
+    order_features = FALSE,
+    grouping_condition = "experiment", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    y_limit = 1.4,
+    col_limit = 1,
+    midpoint_colour = "white"
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
+
+

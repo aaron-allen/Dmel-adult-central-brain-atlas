@@ -1,0 +1,506 @@
+---
+title: "Sexed_Paper_1_Analysis__Figure_3_subcluster_all_individual_subclustering"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                      				    "jobid_", commandArgs(trailingOnly = TRUE)[2], "-",
+                                        "date_", format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]`
+## Input_file = `r commandArgs(trailingOnly = TRUE)[3]`
+## Cluster_resolution = `r commandArgs(trailingOnly = TRUE)[4]`
+
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Load Data
+
+
+```{r load-data}
+input_file <- commandArgs(trailingOnly = TRUE)[3]
+cluster_resolution <- commandArgs(trailingOnly = TRUE)[4]
+subclustering_seu_list_clean <- read_rds(file = paste0("../analyses/rds_files/subclustering/", cluster_resolution, "/lists/", input_file))
+subclustering_seu_list_clean
+```
+
+
+
+# Normalize
+
+
+```{r run-normalize, warning=FALSE, message=FALSE}
+
+n_var_features <- 500
+
+for (i in seq_along(subclustering_seu_list_clean)) {
+    subclustering_seu_list_clean[[i]] <- NormalizeData(object = subclustering_seu_list_clean[[i]],assay = "RNA")
+    subclustering_seu_list_clean[[i]] <- FindVariableFeatures(object = subclustering_seu_list_clean[[i]],
+                                                  selection.method = "mean.var.plot",     # "mean.var.plot" or "vst"
+                                                  nfeatures = n_var_features,
+                                                  mean.cutoff = c(0.01,Inf),
+                                                  dispersion.cutoff = c(0.01, Inf))
+}
+```
+
+
+
+
+
+
+# Integrate
+
+```{r}
+var_features <- SelectIntegrationFeatures(object.list = subclustering_seu_list_clean, nfeatures = n_var_features)
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+var_features <- setdiff(var_features, iso_genes_remove)
+```
+
+
+```{r}
+subclustering_seu <- merge(subclustering_seu_list_clean[[1]],
+		                unlist(subclustering_seu_list_clean[2:length(subclustering_seu_list_clean)]),
+		                merge.data = TRUE)
+
+VariableFeatures(subclustering_seu) <- var_features
+subclustering_seu
+```
+
+
+
+
+```{r}
+FetchData(object = subclustering_seu, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+
+
+# Run PCA
+
+```{r run-scale-pca}
+library(future)
+# plan("multisession", workers = 8)
+options(future.globals.maxSize = 8*1024*1024^2)
+
+DefaultAssay(subclustering_seu) <- "RNA"
+subclustering_seu <- ScaleData(object = subclustering_seu,
+                        assay = "RNA",
+                        vars.to.regress = NULL # c("experiment") #, "sex", "nCount_RNA", "percent_mt", "percent_hsp")
+                     )
+
+subclustering_seu <- RunPCA(subclustering_seu, features = var_features, npcs = 200, approx = FALSE)
+
+plan("sequential")
+invisible(gc())
+```
+
+
+# Run Harmony
+
+```{r run-harmony}
+library(harmony)
+subclustering_seu <- RunHarmony(subclustering_seu,
+                    group.by.vars = c("orig.ident", "experiment", "cell_nuclei"),
+					lambda = c(1,1,1),
+                    assay.use = "RNA")
+invisible(gc())
+```
+
+
+
+
+
+
+
+
+# Visualize
+
+
+
+
+## Run UMAP
+
+
+
+```{r run-umap}
+
+# test_pcs <- 100
+test_pcs <- seq(10, 80, 10)
+
+for (i in seq_along(test_pcs)) {
+    subclustering_seu <- RunUMAP(subclustering_seu, 
+		                    reduction = "harmony", 
+		                    dims = 1:test_pcs[[i]],
+		                    n.neighbors = 50,
+		                    n.epochs = 1000,
+		                    min.dist = 0.01,
+		                    spread = 5,
+		                    fast = FALSE,
+		                    verbose = TRUE,
+		                    reduction.name = paste0("umap_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("umap", test_pcs[[i]], "pcs_"))
+}
+
+subclustering_seu@reductions[["umap"]] <- subclustering_seu@reductions[["umap_20pcs"]]
+```
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = subclustering_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+
+
+```{r fig.width=10, fig.height=10}
+col_list <- scales::hue_pal()(length(unique(subclustering_seu$experiment)))
+test_pc <- 20
+p <- list()
+for (i in 1:length(unique(subclustering_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = subclustering_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(subclustering_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(subclustering_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(subclustering_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+```{r fig.width=10, fig.height=6}
+col_list <- scales::hue_pal()(length(unique(subclustering_seu$sex)))
+test_pc <- 20
+p <- list()
+for (i in 1:length(unique(subclustering_seu@meta.data[["sex"]]))) {
+  p[[i]] <- DimPlot(object = subclustering_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "sex",
+                    pt.size = 0.4,
+                    order = c(unique(subclustering_seu@meta.data[["sex"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(subclustering_seu$sex)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(subclustering_seu@meta.data[["sex"]])[i])
+}
+plot_grid(plotlist = p, ncol = 2)
+```
+
+
+
+# Clustering
+
+```{r run-clustering}
+subclustering_seu <- FindNeighbors(subclustering_seu,
+                       reduction = "harmony",
+                       dims = 1:20,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+in_conda <- R.home() %>% str_detect("R4_cbrg")
+if (in_conda) {
+    algorithm_use <- 4
+} else {
+    algorithm_use <- 1
+}
+
+subclustering_seu <- FindClusters(subclustering_seu,
+                        algorithm = algorithm_use,
+                        resolution = c(0.1,0.2,0.5,1,1.5,2,3,4,5,6,8),
+                        verbose = TRUE)
+```
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(subclustering_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = subclustering_seu, group.by = res[[i]],
+                           reduction = "umap_20pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(subclustering_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = subclustering_seu, group.by = res[[i]],
+                           reduction = "umap_20pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+
+```{r fig.width=10}
+FetchData(object = subclustering_seu, vars = c("experiment","RNA_snn_res.2")) %>% 
+    dplyr::count(experiment, RNA_snn_res.2) %>% 
+    ggplot(aes(x = RNA_snn_res.2, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "stack")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = subclustering_seu, vars = c("experiment","RNA_snn_res.2")) %>% 
+    dplyr::count(experiment,RNA_snn_res.2) %>% 
+    ggplot(aes(x = RNA_snn_res.2, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = subclustering_seu, vars = c("experiment", "cell_nuclei", "RNA_snn_res.2")) %>% 
+    dplyr::count(cell_nuclei, RNA_snn_res.2) %>%
+    ggplot(aes(x = RNA_snn_res.2, y = n, fill = cell_nuclei)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.5, colour = "white")
+```
+
+
+
+
+
+
+
+# Save Rds
+
+
+```{r save-rds}
+save_name <- str_remove(string = input_file, pattern = "_list.rds")
+write_rds(x = subclustering_seu, 
+          file = paste0(
+					"../analyses/rds_files/subclustering/", 
+					cluster_resolution, "/integrated_new/", save_name, 
+					"_integrated--500VarGene--NoReg--Harmony_ori_exp_cell.rds"
+				 )
+          )
+```
+
+
+
+
+
+
+
+
+# Markers
+
+
+```{r run-markers}
+Idents(subclustering_seu) <- "RNA_snn_res.2"
+markers_subcluster <- FindAllMarkers(object = subclustering_seu, assay = "RNA", test.use = "wilcox", only.pos = TRUE)
+markers_subcluster
+```
+
+
+
+
+```{r fig.width=10, fig.height=10}
+markers_subcluster %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(subclustering_seu, features = top10$gene) + NoLegend()
+```
+
+
+
+
+
+```{r}
+write_csv(x = markers_subcluster, 
+          file = paste0("../analyses/markers/subclustering/", cluster_resolution, "/cluster_markers_new/",
+                        save_name, "__markers--500VarGene--NoReg--Harmony_ori_exp_cell.csv")
+          )
+```
+
+
+
+
+
+# Run time
+
+```{r stop-time}
+total_end_time <- Sys.time()
+total_end_time
+total_end_time - total_start_time
+```
+
+
+
+# CPU and RAM Usage
+
+```{r fig.width = 12, fig.height = 4}
+job_id <- commandArgs(trailingOnly = TRUE)[2]
+if (is.na(job_id)) {
+    job_id <- "interactive"
+}
+if (job_id != "local" && job_id != "interactive") {
+    job_log <- paste0("../sps-", job_id, "/sps-", job_id, "-cpu.tsv")
+    if (file.exists(job_log)) {
+        p1 <- read_tsv(file = job_log) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("CPU") +
+              theme(legend.position = "none", validate = TRUE)
+        p2 <- read_tsv(file = paste0("../sps-", job_id, "/sps-", job_id, "-mem.tsv")) %>%
+          gather("Process", "Usage", -`#TIME`, -REQUESTED) %>%
+          group_by(`#TIME`) %>%
+          ggplot(aes(x = `#TIME`, y = Usage, colour = Process)) +
+              geom_line() +
+              ggtitle("Memory")
+        my_legend <- get_legend(p2)
+        p2 <- p2 + theme(legend.position = "none", validate = TRUE)
+        plot_grid(p1, p2, my_legend, ncol = 3, rel_widths = c(3, 3, 2))
+    }
+}
+```
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

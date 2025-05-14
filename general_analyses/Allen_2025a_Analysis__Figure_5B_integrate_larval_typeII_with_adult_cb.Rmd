@@ -1,0 +1,1657 @@
+---
+title: "Allen_2025a_Analysis__Figure_5B_integrate_larval_typeII_with_adult_cb"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+```
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
+                      fig.align = 'center',
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Start time
+
+```{r start_time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+```{r}
+library(tidyverse)
+library(Seurat)
+library(colorspace)
+library(cowplot)
+```
+
+
+
+# Load data
+
+
+
+```{r}
+path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if ( curr_machine == "mentok" ) {
+    path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+```
+
+
+
+```{r load-meta}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+DefaultAssay(meta_cb) <- "RNA"
+meta_cb
+```
+
+```{r}
+typeII_seu <- read_rds("../../proj142/analyses/rds_files/typeII_cbneuron_NEW_pub_seu.rds")
+typeII_seu
+```
+
+
+
+## New List
+
+
+### meta cb
+
+```{r}
+FetchData(object = meta_cb, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+```{r}
+meta_cb@meta.data %>% colnames()
+```
+
+```{r}
+meta_cb$annotation_broad_cell_type_ext_fix %>% unique()
+```
+
+
+```{r}
+good_dataset_cells <- FetchData(object = meta_cb, vars = c("experiment", "annotation_broad_cell_type_ext_fix")) %>% 
+	filter(experiment %in% c("sleep", "sexed", "thirst2")) %>% 
+	filter(annotation_broad_cell_type_ext_fix != "Kenyon_cell") %>% 
+	rownames()
+head(good_dataset_cells)
+```
+
+
+```{r fig.width=14, fig.height=14}
+
+p1 <- DimPlot(object = meta_cb,
+			  cells.highlight = good_dataset_cells,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+```{r}
+metacb_good_sub <- subset(x = meta_cb, cells = good_dataset_cells)
+metacb_good_sub
+```
+
+```{r}
+metacb_good_sub <- AddMetaData(object = metacb_good_sub, metadata = "adult", col.name = "stage")
+```
+
+
+```{r}
+metacb_good_sub$orig.ident %>% unique()
+```
+
+
+
+```{r}
+# metacb_good_sub_list <- SplitObject(object = metacb_good_sub, split.by = "experiment")
+metacb_good_sub_list <- SplitObject(object = metacb_good_sub, split.by = "orig.ident")
+metacb_good_sub_list
+```
+
+
+
+### typeIIs
+
+
+```{r}
+typeII_seu@meta.data %>% colnames()
+```
+
+
+
+```{r}
+typeII_seu$orig.ident %>% unique()
+```
+
+```{r}
+new_orig_ident_metadata <- FetchData(object = typeII_seu, vars = "orig.ident") %>% 
+	rownames_to_column("cell_id") %>% 
+	mutate(new_orig_ident = "unknown") %>% 
+	mutate(new_orig_ident = if_else(orig.ident == "v2", "michki_v2", new_orig_ident)) %>% 
+	mutate(new_orig_ident = if_else(orig.ident == "v3", "michki_v3", new_orig_ident)) %>% 
+	mutate(new_orig_ident = if_else(orig.ident == "larval_typeII", "rajan_v3", new_orig_ident)) %>% 
+	mutate(experiment = if_else(orig.ident == "larval_typeII", "rajan_typeII", "michki_typeII"))
+```
+
+```{r}
+typeII_seu <- AddMetaData(object = typeII_seu, metadata = new_orig_ident_metadata$new_orig_ident, col.name = "orig.ident")
+typeII_seu <- AddMetaData(object = typeII_seu, metadata = "L3", col.name = "stage")
+typeII_seu <- AddMetaData(object = typeII_seu, metadata = "brain", col.name = "tissue")
+typeII_seu <- AddMetaData(object = typeII_seu, metadata = "cell", col.name = "cell_nuclei")
+typeII_seu <- AddMetaData(object = typeII_seu, metadata = "public", col.name = "availability")
+```
+
+
+```{r}
+typeII_seu_list <- SplitObject(object = typeII_seu, split.by = "experiment")
+typeII_seu_list
+```
+
+
+
+
+
+
+## Clean the list
+
+
+```{r}
+metacb_typeII_list <- c(metacb_good_sub_list, typeII_seu_list)
+metacb_typeII_list
+```
+
+
+
+
+```{r}
+metacb_typeII_list_clean <- list()
+for (i in seq_along(metacb_typeII_list)) {
+    counts_to_use <- "RNA"
+    metacb_typeII_list_clean[[i]] <- CreateSeuratObject(counts = metacb_typeII_list[[i]]@assays[[counts_to_use]])
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$orig.ident, col.name = "orig.ident")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$stage, col.name = "stage")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$experiment, col.name = "experiment")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$tissue, col.name = "tissue")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$cell_nuclei, col.name = "cell_nuclei")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$availability, col.name = "availability")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$sex, col.name = "sex")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$percent_mt, col.name = "percent_mt")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$percent_rRNA, col.name = "percent_rRNA")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$percent_rProt, col.name = "percent_rProt")
+	metacb_typeII_list_clean[[i]] <- AddMetaData(object = metacb_typeII_list_clean[[i]], metadata = metacb_typeII_list[[i]]$percent_hsp, col.name = "percent_hsp")
+}
+names(metacb_typeII_list_clean) <- names(metacb_typeII_list)
+metacb_typeII_list_clean
+```
+
+
+
+
+
+# Normalize
+
+
+```{r warning=FALSE, message=FALSE}
+
+n_var_gene <- 1000
+
+for (i in seq_along(metacb_typeII_list_clean)) {
+    metacb_typeII_list_clean[[i]] <- NormalizeData(object = metacb_typeII_list_clean[[i]],assay = "RNA")
+    metacb_typeII_list_clean[[i]] <- FindVariableFeatures(object = metacb_typeII_list_clean[[i]],
+                                                  selection.method = "mean.var.plot",     # "mean.var.plot" or "vst"
+                                                  nfeatures = n_var_gene,
+                                                  mean.cutoff = c(0.01,Inf),
+                                                  dispersion.cutoff = c(0.01, Inf))
+}
+
+```
+
+
+
+
+
+
+# Integrate
+
+```{r}
+var_features <- SelectIntegrationFeatures(object.list = metacb_typeII_list_clean, nfeatures = n_var_gene)
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+var_features <- setdiff(var_features, iso_genes_remove)[1:n_var_gene]
+```
+
+
+```{r}
+metacb_typeII_seu <- merge(metacb_typeII_list_clean[[1]],
+		                unlist(metacb_typeII_list_clean[2:length(metacb_typeII_list_clean)]),
+		                merge.data = TRUE)
+
+VariableFeatures(metacb_typeII_seu) <- var_features
+metacb_typeII_seu
+```
+
+
+
+
+
+
+# Run PCA
+
+```{r}
+# library(future)
+# plan("multisession", workers = 8)
+# options(future.globals.maxSize = 8*1024*1024^2)
+
+DefaultAssay(metacb_typeII_seu) <- "RNA"
+metacb_typeII_seu <- ScaleData(
+	object = metacb_typeII_seu,
+	assay = "RNA",
+	vars.to.regress = NULL #c("orig.ident", "nCount_RNA", "sex", "stage") #, "nCount_RNA", "percent_mt", "percent_hsp")
+)
+```
+
+
+```{r}
+library(future)
+plan("multisession", workers = 12)
+options(future.globals.maxSize = 8*1024*1024^2)
+
+metacb_typeII_seu <- RunPCA(metacb_typeII_seu, features = var_features, npcs = 100, approx = FALSE)
+
+plan("sequential")
+invisible(gc())
+```
+
+```{r}
+metacb_typeII_seu
+```
+
+
+
+# Run Harmony
+
+```{r}
+library(harmony)
+metacb_typeII_seu <- RunHarmony(
+	metacb_typeII_seu,
+	group.by.vars = c("orig.ident", "experiment", "sex", "stage"),
+	lambda = c(1,1,1,1),
+	assay.use = "RNA"
+)
+invisible(gc())
+```
+
+
+
+
+
+
+
+
+# Visualize
+
+## Plot PCA
+
+
+
+```{r fig.width=12, fig.height=20, warning=FALSE, message=FALSE}
+library(colorspace)
+library(cowplot)
+p_list <- list()
+for (i in 1:10) {
+    p_list[[i]] <- DimHeatmap(metacb_typeII_seu,
+                            reduction = "harmony",
+                            dims = i,
+                            cells = 500,
+                            balanced = TRUE,
+                            fast = FALSE) +
+        scale_fill_gradientn(colors = diverging_hcl(10, palette = "Vik"))
+}
+plot_grid(plotlist = p_list, ncol = 2)
+rm(p_list)
+invisible(gc())
+```
+
+
+## Run UMAP
+
+New_Meta_cbNeuronSelect_PUBnofacs_noPolIII_typeII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed--backup.rds
+
+```{r}
+library(future)
+plan("multisession", workers = 12)
+options(future.globals.maxSize = 12*1024*1024^2)
+```
+
+```{r}
+
+test_pcs <- c(100)
+
+for (i in seq_along(test_pcs)) {
+    metacb_typeII_seu <- RunUMAP(metacb_typeII_seu, 
+		                    reduction = "harmony", 
+		                    dims = 1:test_pcs[[i]],
+		                    n.neighbors = 50,
+		                    n.epochs = 1000,
+		                    min.dist = 0.01,
+		                    spread = 5,
+		                    fast = FALSE,
+		                    verbose = TRUE,
+		                    reduction.name = paste0("umap_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("umap", test_pcs[[i]], "pcs_"))
+}
+
+```
+
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=12, fig.height=12}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = metacb_typeII_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment", raster = FALSE, alpha = 0.1) + coord_fixed())
+}
+```
+
+
+```{r fig.width=12, fig.height=12}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = metacb_typeII_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "sex", raster = FALSE, alpha = 0.1) + coord_fixed())
+}
+```
+
+```{r fig.width=12, fig.height=12}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = metacb_typeII_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "orig.ident", raster = FALSE, alpha = 0.1) + coord_fixed())
+}
+```
+
+```{r fig.width=12, fig.height=12}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = metacb_typeII_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "stage", raster = FALSE, alpha = 0.1) + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=20, fig.height=16}
+col_list <- scales::hue_pal()(length(unique(metacb_typeII_seu$experiment)))
+test_pc <- 100
+p <- list()
+for (i in 1:length(unique(metacb_typeII_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = metacb_typeII_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.1, 
+                    alpha = 0.1,
+  				    raster = FALSE,
+                    order = c(unique(metacb_typeII_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(metacb_typeII_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(metacb_typeII_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+
+
+```{r}
+FetchData(object = metacb_typeII_seu, vars = "experiment") %>% 
+    dplyr::count(experiment)
+```
+
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("dpn", "wor", "ase", "klu", "mira", "erm")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("Hey", "brp")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("Imp", "dati")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("Fer2", "TfAP-2", "bsh", "Awh", "ap", "Drgx", "toy", "Ets65A")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=20}
+
+genes <- c("Fer2", "Optix", "D", "dsx")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.width=20, fig.height=14}
+col_list <- scales::hue_pal()(length(unique(metacb_typeII_seu$experiment)))
+test_pc <- 100
+plist <- list()
+for (i in 1:length(unique(metacb_typeII_seu@meta.data[["experiment"]]))) {
+  plist[[i]] <- DimPlot(object = metacb_typeII_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4, 
+  				    raster = FALSE,
+                    order = c(unique(metacb_typeII_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(metacb_typeII_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                # NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(metacb_typeII_seu@meta.data[["experiment"]])[i])
+}
+# plot_grid(plotlist = p, ncol = 3)
+
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=14, fig.width=20}
+
+genes <- c("TfAP-2", "odd", "drm", "dsx")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=14, fig.width=20}
+
+genes <- c("TfAP-2", "odd", "drm", "Drgx")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=20}
+
+genes <- c("bsh", "Gad1", "dsx")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+```{r fig.height=14, fig.width=20}
+
+genes <- c("bsh", "Gad1", "dsx")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("bsh", "VGlut", "Gad1", "Awh")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("bsh", "VGlut", "dve", "bi", "Eip93F")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("bsh", "VGlut", "vg", "otp")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("bsh", "VGlut", "Tk")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("VAChT", "VGlut", "Gad1")
+plist <- FeaturePlot(object = metacb_typeII_seu, 
+           features = genes,
+		   reduction = "umap_100pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+			min.cutoff = 1,
+			max.cutoff = 3,
+			# slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("VAChT", "VGlut", "Gad1")
+plist <- FeaturePlot(object = metacb_typeII_seu, 
+           features = genes,
+		   reduction = "umap_100pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+			min.cutoff = 2,
+			max.cutoff = 4,
+			slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+```{r}
+typeII_seu <- read_rds("../../proj142/analyses/rds_files/typeII_cbneuron_NEW_pub_seu.rds")
+```
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("VAChT", "VGlut", "Gad1")
+plist <- FeaturePlot(object = typeII_seu, 
+           features = genes,
+		   reduction = "umap_30pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 2, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("VGlut", "ap")
+plist <- FeaturePlot(object = typeII_seu, 
+           features = genes,
+		   reduction = "umap_30pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 2, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("Fer2", "TfAP-2", "bsh", "Awh", "ap", "Drgx", "toy", "Ets65A")
+plist <- FeaturePlot(object = typeII_seu, 
+           features = genes,
+		   reduction = "umap_30pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 2, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("TfAP-2", "odd", "drm", "Drgx")
+plist <- FeaturePlot(object = typeII_seu, 
+           features = genes,
+		   reduction = "umap_30pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 2, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("bsh", "vg", "otp", "Tk", "dve")
+plist <- FeaturePlot(object = typeII_seu, 
+           features = genes,
+		   reduction = "umap_30pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 2, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("VGlut", "bsh", "CG44422", "bi", "dve")
+plist <- FeaturePlot(object = typeII_seu, 
+           features = genes,
+		   reduction = "umap_30pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 2, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("br", "ab", "Eip93F", "sr", "danr")
+plist <- FeaturePlot(object = typeII_seu, 
+           features = genes,
+		   reduction = "umap_30pcs",
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 2, 
+			min.cutoff = 0,
+			max.cutoff = 2,
+			# slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Clustering
+
+```{r}
+metacb_typeII_seu <- FindNeighbors(metacb_typeII_seu,
+                       reduction = "harmony",
+                       dims = 1:100,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+in_conda <- R.home() %>% str_detect("R4_cbrg")
+if (in_conda) {
+    algorithm_use <- 4
+} else {
+    algorithm_use <- 1
+}
+
+metacb_typeII_seu <- FindClusters(metacb_typeII_seu,
+                        algorithm = algorithm_use,
+                        resolution = c(0.2,1,2,4,10),
+                        verbose = TRUE)
+```
+
+
+
+
+```{r fig.width=20, fig.height=26}
+p_list <- list()
+res <- colnames(metacb_typeII_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = metacb_typeII_seu, group.by = res[[i]],
+                           reduction = "umap_100pcs", 
+                           pt.size = 0.1,
+                           alpha = 0.1,
+                           label = FALSE, 
+                           label.box = TRUE,
+                           raster = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+
+```{r fig.width=20, fig.height=26}
+p_list <- list()
+res <- colnames(metacb_typeII_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = metacb_typeII_seu, group.by = res[[i]],
+                           reduction = "umap_100pcs", 
+                           pt.size = 0.1,
+                           alpha = 0.1,
+                           label = TRUE, 
+                           label.box = FALSE,
+                           raster = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=20, fig.height=26}
+p_list <- list()
+res <- colnames(metacb_typeII_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = metacb_typeII_seu, group.by = res[[i]],
+                           reduction = "umap_100pcs", 
+                           pt.size = 0.1,
+                           alpha = 0.1,
+                           label = TRUE, 
+                           label.box = TRUE,
+                           raster = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = metacb_typeII_seu, 
+		group.by = "RNA_snn_res.1",
+		alpha = 0.1,
+		split.by = "sex",
+        reduction = "umap_100pcs", 
+        label = FALSE, 
+        label.box = TRUE, 
+		raster = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+
+
+
+
+
+```{r fig.width=10}
+FetchData(object = metacb_typeII_seu, vars = c("experiment","RNA_snn_res.1")) %>% 
+    dplyr::count(experiment, RNA_snn_res.1) %>% 
+    ggplot(aes(x = RNA_snn_res.1, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "stack")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = metacb_typeII_seu, vars = c("experiment","RNA_snn_res.1")) %>% 
+    dplyr::count(experiment,RNA_snn_res.1) %>% 
+    ggplot(aes(x = RNA_snn_res.1, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill") #+
+        #geom_hline(yintercept = 0.5, colour = "white")
+```
+
+```{r fig.width=20, fig.height=6}
+FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.0.2")) %>% 
+    dplyr::count(stage,RNA_snn_res.0.2) %>% 
+    ggplot(aes(x = RNA_snn_res.0.2, y = n, fill = stage)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.05, linewidth = 1, colour = "white") +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.0.2")) %>% 
+    dplyr::count(stage,RNA_snn_res.0.2) %>% 
+    spread(stage, n) %>% 
+    mutate(percent_l3 = 100 * L3 / (adult + L3)) %>% 
+    filter(percent_l3 > 5)
+```
+
+
+
+```{r fig.width=20, fig.height=6}
+FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.1")) %>% 
+    dplyr::count(stage,RNA_snn_res.1) %>% 
+    ggplot(aes(x = RNA_snn_res.1, y = n, fill = stage)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.05, linewidth = 1, colour = "white") +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.1")) %>% 
+    dplyr::count(stage,RNA_snn_res.1) %>% 
+    spread(stage, n) %>% 
+    mutate(percent_l3 = 100 * L3 / (adult + L3)) %>% 
+    filter(percent_l3 > 5)
+```
+
+
+
+```{r fig.width=20, fig.height=6}
+FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.2")) %>% 
+    dplyr::count(stage,RNA_snn_res.2) %>% 
+    ggplot(aes(x = RNA_snn_res.2, y = n, fill = stage)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.05, linewidth = 1, colour = "white") +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.2")) %>% 
+    dplyr::count(stage,RNA_snn_res.2) %>% 
+    spread(stage, n) %>% 
+    mutate(percent_l3 = 100 * L3 / (adult + L3)) %>% 
+    filter(percent_l3 > 5)
+```
+
+
+```{r fig.width=20, fig.height=6}
+FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.4")) %>% 
+    dplyr::count(stage,RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = stage)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.05, linewidth = 1, colour = "white") +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r fig.width=20, fig.height=6}
+FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.10")) %>% 
+    dplyr::count(stage,RNA_snn_res.10) %>% 
+    ggplot(aes(x = RNA_snn_res.10, y = n, fill = stage)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.05, linewidth = 1, colour = "white") +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+```{r}
+percent_cutoff <- 5
+
+clusters_res.0.2 <- FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.0.2")) %>% 
+    dplyr::count(stage,RNA_snn_res.0.2) %>% 
+    spread(stage, n) %>% 
+    mutate(percent_l3 = 100 * L3 / (adult + L3)) %>% 
+    filter(percent_l3 > percent_cutoff) %>% 
+    pull(RNA_snn_res.0.2)
+clusters_res.1 <- FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.1")) %>% 
+    dplyr::count(stage,RNA_snn_res.1) %>% 
+    spread(stage, n) %>% 
+    mutate(percent_l3 = 100 * L3 / (adult + L3)) %>% 
+    filter(percent_l3 > percent_cutoff) %>% 
+    pull(RNA_snn_res.1)
+clusters_res.2 <- FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.2")) %>% 
+    dplyr::count(stage,RNA_snn_res.2) %>% 
+    spread(stage, n) %>% 
+    mutate(percent_l3 = 100 * L3 / (adult + L3)) %>% 
+    filter(percent_l3 > percent_cutoff) %>% 
+    pull(RNA_snn_res.2)
+clusters_res.4 <- FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.4")) %>% 
+    dplyr::count(stage,RNA_snn_res.4) %>% 
+    spread(stage, n) %>% 
+    mutate(percent_l3 = 100 * L3 / (adult + L3)) %>% 
+    filter(percent_l3 > percent_cutoff) %>% 
+    pull(RNA_snn_res.4)
+clusters_res.10 <- FetchData(object = metacb_typeII_seu, vars = c("stage","RNA_snn_res.10")) %>% 
+    dplyr::count(stage,RNA_snn_res.10) %>% 
+    spread(stage, n) %>% 
+    mutate(percent_l3 = 100 * L3 / (adult + L3)) %>% 
+    filter(percent_l3 > percent_cutoff) %>% 
+    pull(RNA_snn_res.10)
+```
+
+```{r}
+typeII_metadata <- FetchData(object = metacb_typeII_seu, vars = c("experiment", "stage",
+                                               "RNA_snn_res.0.2","RNA_snn_res.1",
+                                               "RNA_snn_res.2","RNA_snn_res.4","RNA_snn_res.10")) %>% 
+    rownames_to_column("cell_id") %>% 
+    mutate(nsc_type = "type_I") %>%  
+    mutate(nsc_type = if_else(RNA_snn_res.0.2 %in% clusters_res.0.2, "type_II", nsc_type)) %>%
+    mutate(nsc_type = if_else(RNA_snn_res.1 %in% clusters_res.1, "type_II", nsc_type)) %>% 
+    mutate(nsc_type = if_else(RNA_snn_res.2 %in% clusters_res.2, "type_II", nsc_type)) %>% 
+    mutate(nsc_type = if_else(RNA_snn_res.4 %in% clusters_res.4, "type_II", nsc_type)) %>% 
+    mutate(nsc_type = if_else(RNA_snn_res.10 %in% clusters_res.10, "type_II", nsc_type)) %>% 
+    
+    mutate(nsc_type = if_else(RNA_snn_res.1 %in% c(66,105), "type_I", nsc_type)) %>% 
+    mutate(nsc_type = if_else(RNA_snn_res.1 %in% c(28,87,97,32), "type_II", nsc_type))
+typeII_metadata
+```
+
+
+```{r}
+metacb_typeII_seu <- AddMetaData(object = metacb_typeII_seu, metadata = typeII_metadata$nsc_type, col.name = "nsc_type")
+```
+
+
+
+```{r fig.height=16, fig.width=20}
+
+plot_res1
+plot_l3
+
+DimPlot(object = metacb_typeII_seu, 
+		group.by = "nsc_type",
+		alpha = 0.1,
+        reduction = "umap_100pcs", 
+        label = TRUE, 
+        label.box = TRUE, 
+		raster = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+
+```{r}
+typeII_metadata_to_save <- typeII_metadata %>% 
+    select(cell_id, experiment, nsc_type)
+typeII_metadata_to_save
+```
+
+
+
+```{r}
+write_rds(x = metacb_typeII_seu, file = "/Users/aaronallen/Documents/Sexed Paper/Single-cell objects to share/New_Meta_cbNeuronSelect_PUBnofacs_noPolIII_typeII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed--backup.rds")
+write_csv(x = typeII_metadata_to_save, file = "/Users/aaronallen/Documents/Sexed Paper/New_Meta_cbNeuronSelect_PUBnofacs_noPolIII_typeII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed___typeII_metadata.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+l3_cells <- WhichCells(object = metacb_typeII_seu, expression = stage == "L3")
+
+plot_l3 <- DimPlot(object = metacb_typeII_seu,
+                reduction = "umap_100pcs",
+                cells.highlight = l3_cells,
+                cols.highlight = "black",
+                cols = "lightsteelblue2",
+                sizes.highlight = 0.2,
+                pt.size = 0.2, 
+                alpha = 0.1,
+  			    raster = FALSE
+                ) +
+            NoLegend() +
+            # NoAxes() +
+            coord_fixed() +
+    ggtitle("L3 TypeII")
+plot(plot_l3)
+
+```
+
+```{r}
+plot_res1 <- DimPlot(object = metacb_typeII_seu, 
+		group.by = "RNA_snn_res.1",
+		alpha = 0.1,
+        reduction = "umap_100pcs", 
+        label = TRUE, 
+        label.box = FALSE, 
+		raster = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+plot(plot_res1)
+```
+
+
+```{r fig.height=16, fig.width=20}
+
+plot_res1
+plot_l3
+
+```
+
+
+
+
+```{r fig.height=16, fig.width=20}
+
+plot_res1
+plot_l3
+
+
+genes <- c("Fer2", "TfAP-2", "bsh", "Awh", "ap", "Drgx", "toy", "Ets65A")
+plist <- FeaturePlot(
+            object = metacb_typeII_seu, 
+            features = genes,
+            reduction = "umap_100pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.2,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]] + NoLegend())
+}
+
+```
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("Fer2", "TfAP-2", "bsh", "Awh", "ap", "Drgx", "toy", "Ets65A")
+plist <- FeaturePlot(
+            object = typeII_seu, 
+            features = genes,
+            reduction = "umap_30pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 2,
+            # alpha = 0.1,
+            min.cutoff = 0,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]] + NoLegend())
+}
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+write_rds(x = metacb_typeII_seu, file = "../../proj136/analyses/rds_files/New_Meta_cbNeuronSelect_PUBnofacs_noPolIII_typeII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed--backup.rds")
+# metacb_typeII_seu <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuronSelect_PUBnofacs_noPolIII_typeII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed--backup.rds")
+```
+
+
+```{r}
+typeII_ol_neuronal_cells <- FetchData(object = metacb_typeII_seu, 
+								   vars = "RNA_snn_res.0.2"
+								   ) %>%
+	filter(RNA_snn_res.0.2 %in% c(1,6)) %>% 
+	rownames_to_column("cell_id") %>% 
+	select(cell_id)
+typeII_ol_neuronal_cells
+```
+
+
+```{r}
+write_csv(x = typeII_ol_neuronal_cells, file = "../../proj142/analyses/markers/typeII_NEW_pub_ol_neuron_cells.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

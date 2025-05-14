@@ -1,0 +1,465 @@
+---
+title: "Allen_2025a_Analysis__Figure_5C_extrapolating_typeII_metadata"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+```
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
+                      fig.align = 'center',
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Start time
+
+```{r start_time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+```{r}
+library(tidyverse)
+library(Seurat)
+library(colorspace)
+library(cowplot)
+```
+
+
+
+# Load data
+
+
+
+```{r}
+path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if ( curr_machine == "mentok" ) {
+    path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+```
+
+
+
+```{r load-meta}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+DefaultAssay(meta_cb) <- "RNA"
+meta_cb
+```
+
+
+
+```{r}
+typeII_seu <- read_rds("../../proj142/analyses/rds_files/typeII_cbneuron_NEW_pub_seu.rds")
+typeII_seu
+```
+
+
+```{r}
+metacb_typeII_seu <- read_rds(file = "/Users/aaronallen/Library/CloudStorage/Dropbox-GoodwinLab/aaron allen/Single-cell objects to share/New_Meta_cbNeuronSelect_PUBnofacs_noPolIII_typeII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed--backup.rds")
+metacb_typeII_seu
+```
+
+
+
+
+```{r}
+typeII_metadata_to_save <- read_csv(file = "/Users/aaronallen/Documents/Sexed Paper/New_Meta_cbNeuronSelect_PUBnofacs_noPolIII_typeII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed___typeII_metadata.csv")
+```
+
+
+```{r}
+meta_cb@meta.data %>% colnames()
+```
+
+
+```{r}
+meta_cb_typeII_metadata <- FetchData(object = meta_cb, vars = c("experiment", "subcluster_clusters", "annotation_broad_cell_type_ext_fix")) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(select(typeII_metadata_to_save, cell_id, nsc_type), by = "cell_id") %>% 
+    mutate(nsc_type = if_else(annotation_broad_cell_type_ext_fix == "Kenyon_cell", "MB", nsc_type))
+meta_cb_typeII_metadata
+```
+
+
+```{r}
+cluster_level_ann <- meta_cb_typeII_metadata %>% 
+    select(subcluster_clusters, nsc_type) %>% 
+    group_by(subcluster_clusters) %>%
+    table() %>%
+    as.data.frame() %>%
+    group_by(subcluster_clusters) %>%
+    arrange(subcluster_clusters, desc(Freq)) %>%
+    mutate(Perc = 100 * Freq / sum(Freq)) %>%
+    slice(1)
+head(cluster_level_ann)
+```
+
+
+```{r}
+cluster_level_ann
+```
+
+
+```{r}
+meta_cb_typeII_metadata_extrapolated <- meta_cb_typeII_metadata %>%
+    select(cell_id, subcluster_clusters) %>% 
+    left_join(select(cluster_level_ann, subcluster_clusters, nsc_type), by = join_by(subcluster_clusters))
+meta_cb_typeII_metadata_extrapolated
+```
+
+
+### fix errors
+
+```{r}
+meta_cb_typeII_metadata_extrapolated <- meta_cb_typeII_metadata_extrapolated %>% 
+    mutate(nsc_type = if_else(subcluster_clusters == "Achl_003", "type_I", nsc_type))
+```
+
+
+
+```{r}
+meta_cb <- AddMetaData(object = meta_cb, metadata = meta_cb_typeII_metadata_extrapolated$nsc_type, col.name = "nsc_type")
+```
+
+
+```{r fig.height=12, fig.width=20}
+
+DimPlot(object = meta_cb, 
+		group.by = "nsc_type",
+		na.value = "white",
+		cols = c("#D4A2D4", "#79A2D4", "#D3A348"),
+		# cols = c("#D6ABF7", "#AAD0ED", "#D9BC7D"),
+		# cols = c("#e36df6", "#00b9e4", "#7798ff"),
+		pt.size = 0.4,
+		alpha = 0.1,
+        reduction = "tsne_240pcs", 
+        label = FALSE, 
+        label.box = TRUE, 
+		raster = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+
+```
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+DimPlot(object = meta_cb, 
+		group.by = "nsc_type",
+		na.value = "white",
+		# cols = c("", "", ""), 
+		pt.size = 0.2,
+		alpha = 0.1,
+        reduction = "tsne_240pcs", 
+        label = FALSE, 
+        label.box = TRUE, 
+		raster = FALSE) + 
+    # NoLegend() + 
+    coord_fixed() +
+    scale_color_discrete_qualitative(palette = "Set 2")
+
+```
+
+
+
+
+
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+DimPlot(object = metacb_typeII_seu, 
+		group.by = "stage",
+		na.value = "white",
+		cols = c("#79A2D4", "#D3A348"),
+		# cols = c("#D6ABF7", "#AAD0ED", "#D9BC7D"),
+		# cols = c("#e36df6", "#00b9e4", "#7798ff"),
+		pt.size = 0.1,
+		alpha = 0.1,
+        reduction = "umap_100pcs", 
+        label = FALSE, 
+        label.box = TRUE, 
+		raster = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+
+```
+
+
+
+
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+DimPlot(object = meta_cb, 
+		group.by = "subcluster_clusters",
+		# na.value = "white",
+		# cols = c("#D4A2D4", "#79A2D4", "#D3A348"),
+		# cols = c("#D6ABF7", "#AAD0ED", "#D9BC7D"),
+		# cols = c("#e36df6", "#00b9e4", "#7798ff"),
+		pt.size = 0.4,
+		alpha = 0.1,
+        reduction = "tsne_240pcs", 
+        label = TRUE, 
+        label.box = FALSE, 
+		raster = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+
+```
+
+
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("fru", "dsx", "sv", "Drgx")
+plist <- FeaturePlot(
+            object = meta_cb, 
+            features = genes,
+            reduction = "tsne_240pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 1,
+            max.cutoff = 3,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("Imp", "Hr51", "trh", "Eip93F", "toy", "br")
+plist <- FeaturePlot(
+            object = meta_cb, 
+            features = genes,
+            reduction = "tsne_240pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 1,
+            max.cutoff = 3,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("CG32532", "Hr51", "trh", "Eip63F-1", "toy", "br")
+plist <- FeaturePlot(
+            object = meta_cb, 
+            features = genes,
+            reduction = "tsne_240pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 1,
+            max.cutoff = 3,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("Oaz", "acj6", "Lim3", "Drgx")
+plist <- FeaturePlot(
+            object = meta_cb, 
+            features = genes,
+            reduction = "tsne_240pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 1,
+            max.cutoff = 3,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("Oaz", "acj6", "kn", "Imp", "dati", "br")
+plist <- FeaturePlot(
+            object = meta_cb, 
+            features = genes,
+            reduction = "tsne_240pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            min.cutoff = 1,
+            max.cutoff = 3,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+

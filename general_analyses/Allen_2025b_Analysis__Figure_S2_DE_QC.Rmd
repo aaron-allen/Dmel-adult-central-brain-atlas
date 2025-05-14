@@ -1,0 +1,1014 @@
+---
+title: "Allen_2025b_Analysis__Figure_S2_DE_QC.Rmd"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 100,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(colorspace)
+library(tidyverse)
+```
+
+
+
+# Functions
+
+## plot_sex_bias_across_celltypes_multi
+
+
+```{r}
+
+plot_sex_bias_across_celltypes_multi <- function(
+    object,
+    feature = "fru",
+    grouping_condition = "subcluster_clusters",
+    comparison_condition = "sex",
+    data_slot = "counts",
+    facet_plot = FALSE,
+    facet_by = "experiment",
+    y_limit = NULL,
+    umi_count_df
+    ){
+    
+    
+    temp_data <- FetchData(object, vars = c(feature, grouping_condition, comparison_condition, facet_by), slot = data_slot) %>% 
+        dplyr::rename("my_feature" = (!!feature)) %>% 
+        dplyr::rename("my_grouping" = (!!grouping_condition)) %>% 
+        dplyr::rename("my_comparison" = (!!comparison_condition)) %>% 
+        dplyr::rename("my_facet" = (!!facet_by)) %>%
+        filter(!my_facet %in% c("sleep", "species"))
+    
+
+    temp_result <- temp_data %>%
+        group_by(my_grouping, my_comparison) %>%
+        summarize(total_feature = sum(my_feature, na.rm = TRUE), .groups = "drop") %>%
+        pivot_wider(names_from = my_comparison, values_from = total_feature, values_fill = list(total_feature = 0)) %>%
+        mutate(log2_ratio = log2((female + 0.1) / (male + 0.1)))
+    
+    temp_result_1 <- temp_result %>%
+        arrange(log2_ratio) %>%
+        mutate(my_grouping = factor(my_grouping, levels = unique(my_grouping))) 
+    
+    temp_result_2a <- temp_data %>% 
+        dplyr::group_by(my_grouping) %>% 
+        dplyr::summarise(mean_feature = mean(my_feature), .groups = "drop") %>% 
+        dplyr::mutate(log_mean_feature = log1p(mean_feature))
+    temp_result_2a$my_grouping <- factor(temp_result_2a$my_grouping, levels = temp_result_1$my_grouping)
+    
+    temp_result_2b <- temp_data %>% 
+        dplyr::group_by(my_grouping, my_facet) %>% 
+        dplyr::summarise(sum_feature = sum(my_feature), .groups = "drop")
+    temp_result_2b$my_grouping <- factor(temp_result_2b$my_grouping, levels = temp_result_1$my_grouping)
+    
+    x_closest_to_zero <- temp_result_1 %>%
+        dplyr::slice(which.min(abs(log2_ratio))) %>%
+        pull(my_grouping)
+    # y_limit_calc <- ceiling(max(abs(temp_result_1$log2_ratio)))
+    y_limit_calc <- temp_result_1 %>% 
+        dplyr::filter(!my_grouping %in% c("Achl_003", "Achl_008", "Achl_058", "Glut_058", "GABA_012")) %>% 
+        pull(log2_ratio) %>% abs() %>% max() %>% ceiling()
+    if (is.null(y_limit)) {
+        y_limit <- max(2, y_limit_calc)
+    }
+    
+    
+    temp_result_3 <- temp_data %>%
+        group_by(my_grouping, my_facet, my_comparison) %>%
+        summarize(total_feature = sum(my_feature, na.rm = TRUE), .groups = "drop") %>%
+        pivot_wider(names_from = my_comparison, values_from = total_feature, values_fill = list(total_feature = 0)) %>%
+        mutate(log2_ratio = log2((female + 0.1) / (male + 0.1)))
+
+    p1 <- ggplot(temp_result_1, aes(x = my_grouping, y = log2_ratio, colour = log2_ratio)) +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        # geom_hline(yintercept = 0.5, linetype = "dashed") +
+        # geom_hline(yintercept = -0.5, linetype = "dashed") +
+        geom_vline(xintercept = x_closest_to_zero, linetype = "dashed") +
+        geom_point(size = 2) +
+        scale_y_continuous(labels = scales::number_format(accuracy = 0.01), limits = c(-y_limit, y_limit)) +
+        # ylim(-y_limit, y_limit) +
+        scale_color_gradientn(
+            colours = c("#00bfc4", "black", "#c77cff"), 
+            limits = c(-1,1), 
+            oob = scales::squish
+        ) +
+        labs(
+            x = grouping_condition, 
+            y = paste0("log2(Female ", feature, " / Male ", feature, ")")
+        ) +
+        theme_classic() +
+        theme(
+            axis.title.x=element_blank(),
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank()
+        ) +
+        NoLegend()
+ 
+    p2a <- ggplot(temp_result_2a, aes(x = my_grouping, y = log_mean_feature)) +
+        geom_bar(stat = "identity", position = "stack", fill = "#bcd2ee", colour = "white", width = 1) +
+        scale_y_continuous(labels = scales::number_format(accuracy = 0.001)) +
+        scale_fill_discrete_qualitative(palette = "Set 2") +
+        # scale_y_continuous(trans = "log1p") +
+        labs(
+            y = paste0("log1p( Mean ", feature, " UMI )")
+        ) +
+        theme_classic() +
+        theme(
+            axis.title.x=element_blank(),
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank()
+        ) +
+        NoLegend()
+
+ 
+    p2b <- ggplot(temp_result_2b, aes(x = my_grouping, y = sum_feature, fill = my_facet)) +
+        geom_bar(stat = "identity", position = "fill", colour = "white", width = 1) +
+        scale_y_continuous(labels = scales::number_format(accuracy = 0.001)) +
+        scale_fill_discrete_qualitative(palette = "Set 2") +
+        labs(
+            y = paste0("Proportion ", feature, " UMI")
+        ) +
+        theme_classic() +
+        theme(
+            axis.title.x=element_blank(),
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank()
+        ) +
+        NoLegend()
+
+    
+    p3 <- ggplot(temp_result, aes(y = log2_ratio)) +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        geom_boxplot(outlier.size = -1) +
+        ylim(-y_limit, y_limit) +
+        labs(
+            x = grouping_condition, 
+            y = paste0("log2(Female ",  feature, " / Male ", feature, ")")
+        ) +
+        theme_classic() +
+        theme(
+            axis.title.x=element_blank(),
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank()
+        )
+     
+
+    p4 <- ggplot(temp_result_3, aes(x = my_facet, y = log2_ratio, colour = log2_ratio)) +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        geom_boxplot(aes(fill = my_facet), outlier.size = -1) +
+        ylim(-y_limit, y_limit) +
+        scale_fill_discrete_qualitative(palette = "Set 2") +
+        labs(
+            x = grouping_condition, 
+            y = paste0("log2(Female ",  feature, " / Male ", feature, ")")
+        ) +
+        theme_classic() +
+        theme(
+            axis.title.x=element_blank(),
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank()
+        ) +
+        NoLegend()
+    
+    
+    temp_result_4 <- umi_count_df %>% 
+        dplyr::filter(RowName == feature) %>% 
+        dplyr::filter(!Dataset %in% c("sleep", "species")) %>% 
+        dplyr::mutate(expected = overall_percent * sum(RowSum) / 100,
+                      difference = log2(RowSum/expected)
+                      ) 
+    # log_norm_y_limit <- max(y_limit, max(abs(temp_result_4$difference)))
+    log_norm_y_limit <- max(4, ceiling(max(abs(temp_result_4$difference))))
+    
+    p5 <- ggplot(temp_result_4, aes(x = Dataset, y = difference, fill = Dataset)) +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        geom_bar(stat = "identity") +
+        ylim(-log_norm_y_limit, log_norm_y_limit) +
+        scale_fill_discrete_qualitative(palette = "Set 2") +
+        labs(
+            y = "log2( UMI(obs) / UMI(exp) )"
+        ) +
+        theme_classic() +
+        theme(
+            axis.title.x=element_blank(),
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank()
+        ) +
+        NoLegend()
+
+
+    ptitle <- ggdraw() + draw_label(paste0("Log2 Ratio of Female to Male ", feature), 
+                                   fontface = "bold", x = 0, hjust = 0, vjust = -0.1, size = 14)
+    p6 <- plot_grid(p1, p2a, p2b, ncol = 1, rel_heights = c(2,1,1))
+    p7 <- plot_grid(p6, p3, p4, p5, ncol = 4, rel_widths = c(8,1,1,1))
+    # p8 <- plot_grid(p7, p6, ncol = 1, rel_heights = c(1,1))
+    p9 <- plot_grid(ptitle, p7, ncol = 1, rel_heights = c(1, 10))
+    
+    return(p9)  
+}
+
+
+```
+
+
+
+## plot_sex_bias_volcanoplots
+
+```{r}
+plot_sex_bias_volcanoplots <- function(
+    clusterOI = NULL,
+    deg_df = NULL,
+    x_lims = NULL,
+    y_lims = NULL,
+    p_cutoff = 0.01,
+    fc_cutoff = 1,
+    is_zinb = TRUE
+){
+    clusterOI_deg_gene_filtered <- deg_df %>% 
+        filter(Cluster == clusterOI) %>% 
+        dplyr::filter(!Gene %in% c("lncRNA:roX1", "lncRNA:roX2")) %>%
+        arrange(desc(abs(log2FoldChange)))
+    # clusterOI_deg_gene_filtered
+    
+    if (is_zinb) {
+        x_data <- "log2FoldChange"
+        y_data <- "padj"
+    } else {
+        x_data <- "avg_log2FC"
+        y_data <- "p_val_adj"
+    }
+    if (is.null(x_lims)) {
+        x_lims <- ceiling(max(-log10(clusterOI_deg_gene_filtered[[x_data]]), na.rm = TRUE))
+    }
+    if (is.null(y_lims)) {
+        y_lims <- ceiling(max(-log10(clusterOI_deg_gene_filtered[[y_data]]), na.rm = TRUE))
+    }
+
+    p1 <- EnhancedVolcano::EnhancedVolcano(
+        toptable = clusterOI_deg_gene_filtered,
+        lab = clusterOI_deg_gene_filtered$Gene,
+        xlim = c(-x_lims, x_lims),
+        ylim = c(0, y_lims),
+        x = x_data,
+        y = y_data,
+        pCutoff = p_cutoff,
+        FCcutoff = fc_cutoff,
+        pointSize = 2,
+        raster = TRUE,
+        boxedLabels = FALSE,
+        drawConnectors = TRUE,
+        subtitle = paste0("Cluster = ", clusterOI,
+                        ", test = ", "zinb-deseq"),
+        caption = paste0("FC cutoff = ", fc_cutoff,
+                       "; p-value cutoff = ", p_cutoff)
+    )
+    return(p1)
+}
+
+```
+
+
+
+## plot_sex_bias_GO_analysis
+
+```{r}
+
+filter_and_run_sex_bias_GO_analysis <- function(
+        de_df = NULL,                        # data frame of differential expression
+        pval_thres = 0.05,                   # threshold cutoff of adjusted p-value
+        log_fc_thres = 0.5,                  # threshold cutoff for log fold change
+        which_sex = "female",                # 
+        # log_fc_negative = FALSE,             # TRUE for negative logFC gene, ie male-biased
+        # genes_to_keep = NULL,                # specified vector of genes to remove   
+        # fg_genes = NULL,                    # vector of differentially expressed genes
+        bg_genes = NULL,                     # vector of background genes
+        use_bg_genes = FALSE,                # whether to use background genes or not                 
+        ontology_catagory = "BP",            # one of "BP", "MF", "CC"
+        org_db = "org.Dm.eg.db",             # drosophila melanogaster
+        key_type = "SYMBOL"                  # using gene symbol for now
+    ){
+    
+    library(clusterProfiler)
+    library(org.Dm.eg.db)
+    library(AnnotationDbi)
+    
+    sig_symbol <- de_df %>% 
+        dplyr::filter(padj < pval_thres) %>%
+        dplyr::mutate(log2FoldChange = if (which_sex == "male") -log2FoldChange else log2FoldChange) %>%
+        dplyr::filter(log2FoldChange > log_fc_thres) %>% 
+    	dplyr::select(Gene) %>% 
+    	unique()
+    # sig_symbol    
+    
+    go_results_bp_deg <- clusterProfiler::enrichGO(gene = sig_symbol$Gene, OrgDb = org_db, universe = bg_genes, keyType = key_type, ont = ontology_catagory)
+    return(go_results_bp_deg)
+    
+}
+
+
+
+plot_sex_bias_GO_analysis <- function(
+        de_df = NULL,                        # data frame of differential expression
+        pval_thres = 0.05,                   # threshold cutoff of adjusted p-value
+        log_fc_thres = 0.5,                  # threshold cutoff for log fold change
+        which_sex = "female",                #
+        # log_fc_negative = FALSE,             # TRUE for negative logFC gene, ie male-biased
+        # genes_to_keep = NULL,                # specified vector of genes to remove
+        # fg_genes = NULL,                    # vector of differentially expressed genes
+        bg_genes = NULL,                     # vector of background genes
+        use_bg_genes = FALSE,                # whether to use background genes or not
+        ontology_catagory = "BP",            # one of "BP", "MF", "CC"
+        org_db = "org.Dm.eg.db",             # drosophila melanogaster
+        key_type = "SYMBOL"                  # using gene symbol for now
+    ){
+
+    library(clusterProfiler)
+    library(org.Dm.eg.db)
+    library(AnnotationDbi)
+
+    sig_symbol <- de_df %>%
+        dplyr::filter(padj < pval_thres) %>%
+        dplyr::mutate(log2FoldChange = if (which_sex == "male") -log2FoldChange else log2FoldChange) %>%
+        dplyr::filter(log2FoldChange > log_fc_thres) %>%
+    	dplyr::select(Gene) %>%
+    	unique()
+    # sig_symbol
+
+    go_results_bp_deg <- clusterProfiler::enrichGO(gene = sig_symbol$Gene, OrgDb = org_db, universe = bg_genes, keyType = key_type, ont = ontology_catagory)
+    go_results_bp_deg_df <- as.data.frame(go_results_bp_deg) %>% dplyr::arrange(qvalue)
+    p1 <- dotplot(go_results_bp_deg, orderBy = "x", showCategory = 20) +
+        labs(
+            title = paste0(which_sex, " -- ", ontology_catagory),
+            subtitle = paste0(
+                "FC cutoff = ", log_fc_thres,
+                "; p-value cutoff = ", pval_thres
+            ),
+            caption = paste0(
+                "Use bg gene = ", use_bg_genes
+            )
+        )
+
+    # return(go_results_bp_deg)
+    print(go_results_bp_deg_df)
+    plot(p1)
+
+}
+```
+
+
+
+
+
+# Load data
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+DefaultAssay(meta_cb) <- "RNA"
+Idents(meta_cb) <- "subcluster_clusters"
+meta_cb
+```
+
+
+
+```{r}
+options(scipen = 1)
+deg_list <- list()
+deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_deseq_df_2.csv", col_types = cols())
+```
+
+
+
+
+# Gene Filtering
+
+
+
+## iso and trans genes
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4"
+)
+```
+
+
+
+## dataset specific genes
+
+
+### load pre-calc. counts
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent <- read_csv(file = "../../proj136/analyses/all_gene_max_sum__by_exp_wPercent.csv")
+head(all_gene_max_sum__by_exp_together_wPercent)
+```
+
+
+```{r}
+all_gene_max_sum <- read_csv(file = "../../proj136/analyses/all_gene_max_sum.csv")
+head(all_gene_max_sum)
+```
+
+
+
+### filter candidates
+
+```{r}
+genes_adfca_gt_30p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(Dataset == "adfca") %>%
+    dplyr::filter(percent_dataset > 30) %>%
+    pull(RowName)
+length(genes_adfca_gt_30p)
+```
+
+
+```{r}
+genes_any_gt_60p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(percent_dataset > 60) %>% 
+    pull(RowName) %>% 
+    unique()
+length(genes_any_gt_60p)
+```
+
+
+```{r}
+genes_low_exp <- all_gene_max_sum %>%
+    dplyr::filter(RowSum < 400) %>% 
+    dplyr::filter(RowMax < 4) %>% 
+    pull(RowName) %>% 
+    unique()
+length(genes_low_exp)
+```
+
+
+```{r}
+genes_remove <- sort(unique(c(genes_adfca_gt_30p, genes_any_gt_60p, genes_low_exp)))
+length(genes_remove)
+```
+
+
+```{r}
+genes_sexed_dataset <- all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    dplyr::filter(sexed_dataset_counts > 45) %>% 
+    pull(RowName)
+length(genes_sexed_dataset)
+```
+
+```{r}
+str_subset(string = genes_any_gt_60p, pattern = "whe")
+```
+
+```{r}
+str_subset(string = genes_sexed_dataset, pattern = "Eip93F")
+```
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    dplyr::filter(RowName == "Eip93F")
+```
+
+
+## filter deg list
+
+```{r}
+deg_gene_filtered <- deg_list[["zinb-deseq"]] %>%
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset)
+deg_gene_filtered
+```
+
+
+
+
+# Plot repeat offenders
+
+```{r fig.height=8, fig.width=6}
+deg_gene_filtered %>%
+    dplyr::filter(padj < 0.01) %>% 
+    dplyr::count(Gene) %>% 
+    dplyr::arrange(n) %>%
+    dplyr::mutate(Gene = factor(Gene, levels = unique(Gene))) %>% 
+    dplyr::filter(n > 20) %>% 
+    ggplot(aes(x = n, y = Gene)) +
+        geom_bar(stat = "identity", fill = "#bcd2ee") +
+        theme_classic() +
+        theme(
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank()
+        ) +
+        ggtitle("Number of cell types each gene is Sig Diff -- stringent")
+```
+
+
+```{r fig.height=12, fig.width=6}
+deg_gene_filtered %>%
+    dplyr::filter(padj < 0.05) %>% 
+    dplyr::count(Gene) %>% 
+    dplyr::arrange(n) %>%
+    dplyr::mutate(Gene = factor(Gene, levels = unique(Gene))) %>% 
+    dplyr::filter(n > 20) %>% 
+    ggplot(aes(x = n, y = Gene)) +
+        geom_bar(stat = "identity", fill = "#bcd2ee") +
+        theme_classic() +
+        theme(
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank()
+        ) +
+        ggtitle("Number of cell types each gene is Sig Diff -- relaxed")
+```
+
+
+
+
+## Calc Normalized UMI
+
+
+```{r}
+overall_dataset_percent <- FetchData(object = meta_cb, vars = c("nCount_RNA", "experiment")) %>% 
+    dplyr::filter(!experiment %in% c("sleep", "species")) %>%
+    dplyr::group_by(experiment) %>% 
+    dplyr::summarise(total_umi = sum(nCount_RNA)) %>% 
+    dplyr::mutate(overall_percent = 100 * total_umi / sum(total_umi)) #%>% 
+    # dplyr::select(experiment, overall_percent)
+head(overall_dataset_percent)
+```
+
+
+
+```{r}
+all_gene_max_sum__by_exp_together_wNormCont <- all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::arrange(RowName) %>% 
+    dplyr::mutate(percent_dataset = 100 * RowSum / sum(RowSum)) %>% 
+    dplyr::left_join(overall_dataset_percent, by = c("Dataset" = "experiment")) %>% 
+    dplyr::mutate(normalized_contribution = percent_dataset / overall_percent) 
+head(all_gene_max_sum__by_exp_together_wNormCont)
+```
+
+
+
+
+
+
+
+
+## Plot log across cell types
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+genes <- deg_gene_filtered %>%
+    dplyr::filter(padj < 0.05) %>% 
+    dplyr::count(Gene) %>% 
+    dplyr::arrange(desc(n)) %>% 
+    dplyr::filter(n > 20) %>% 
+    pull(Gene)
+
+for (i in seq_along(genes)) {
+    p1 <- plot_sex_bias_across_celltypes_multi(
+        object = meta_cb, 
+        feature = genes[[i]], 
+        grouping_condition = "subcluster_clusters", 
+        comparison_condition = "sex", 
+        data_slot = "counts", 
+        facet_plot = FALSE, 
+        facet_by = "experiment",
+        # y_limit = 3,
+        umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+    )
+    plot(p1)
+}
+
+```
+
+
+
+
+
+
+### Negative examples
+
+```{r}
+options(scipen = 1)
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "ninaE", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 3,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "Yp1", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 12,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "Nplp2", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 3,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "apolpp", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 3,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "Adh", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 4,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "Ilp2", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 4,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "RYa", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 4,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "lncRNA:CR44042", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 6,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "CG13924", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 6,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+
+
+
+### postive examples
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "elav", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 8,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "nSyb", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 6,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "VAChT", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 6,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "VGlut", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 6,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "Gad1", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 6,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+
+
+
+## Plot SDH
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "lncRNA:roX1", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 14,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+plot_sex_bias_across_celltypes_multi(
+    object = meta_cb, 
+    feature = "lncRNA:roX2", 
+    grouping_condition = "subcluster_clusters", 
+    comparison_condition = "sex", 
+    data_slot = "counts", 
+    facet_plot = FALSE, 
+    facet_by = "experiment",
+    # y_limit = 14,
+    umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+)
+
+```
+
+
+
+
+```{r message=FALSE, warning=FALSE, fig.width=20, fig.height=6}
+
+genes <- c(
+    # "fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+    # "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+    "mle", "mof", "msl-1", "msl-2", "msl-3",
+    "Sxl", "ssx", "tra", "tra2", "fru", "dsx"
+)
+
+for (i in seq_along(genes)) {
+    p1 <- plot_sex_bias_across_celltypes_multi(
+        object = meta_cb, 
+        feature = genes[[i]], 
+        grouping_condition = "subcluster_clusters", 
+        comparison_condition = "sex", 
+        data_slot = "counts", 
+        facet_plot = FALSE, 
+        facet_by = "experiment",
+        # y_limit = 3,
+        umi_count_df = all_gene_max_sum__by_exp_together_wNormCont
+    )
+    plot(p1)
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
+
+
+

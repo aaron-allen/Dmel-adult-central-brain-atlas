@@ -1,0 +1,855 @@
+---
+title: "Allen_2025b_Analysis__Figure_4K_CREa1ventral_subclustering"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load Data
+
+
+
+
+
+<!-- ```{r} -->
+<!-- meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds") -->
+<!-- DefaultAssay(meta_cb) <- "RNA" -->
+<!-- Idents(meta_cb) <- "subcluster_clusters" -->
+<!-- meta_cb -->
+<!-- ``` -->
+
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_noKC_v2--1000VarGene--NoReg--Harmony_ori_exp_cell_devage--_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+DefaultAssay(meta_cb) <- "RNA"
+Idents(meta_cb) <- "RNA_snn_res.30"
+meta_cb
+```
+
+
+
+
+
+
+
+# Find CREa1ventral
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=14, fig.height=14}
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.6",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+p2 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.15",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p2)
+
+
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("TfAP-2", "dsf", "caup", "Gad1")
+plist <- FeaturePlot(
+    object = meta_cb, 
+    reduction = "tsne_240pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.4, 
+    # min.cutoff = 0,
+    max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+```{r}
+FetchData(object = meta_cb, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.6 %in% c(83)) %>%
+    filter(RNA_snn_res.8 %in% c(82)) %>%
+    filter(RNA_snn_res.15 %in% c(59)) %>%
+    filter(RNA_snn_res.30 %in% c(66,233)) %>% 
+    filter(RNA_snn_res.50 %in% c(163,209,482)) %>% 
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 97
+340/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_cb, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.6 %in% c(83)) %>%
+    filter(RNA_snn_res.8 %in% c(82)) %>%
+    filter(RNA_snn_res.15 %in% c(59)) %>%
+    filter(RNA_snn_res.30 %in% c(66,233)) %>% 
+    filter(RNA_snn_res.50 %in% c(163,209,482)) %>% 
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_cb,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.4, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+	    split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+# p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+CREa1ventral_sub <- subset(x = meta_cb, cells = cells_highlight)
+CREa1ventral_sub
+```
+
+```{r}
+CREa1ventral_list <- SplitObject(object = CREa1ventral_sub, split.by = "experiment")
+CREa1ventral_list
+```
+
+
+
+```{r}
+rm(meta_cb)
+gc()
+```
+
+
+
+
+```{r}
+CREa1ventral_list_clean <- list()
+for (i in seq_along(CREa1ventral_list)) {
+    counts_to_use <- "RNA"
+    CREa1ventral_list_clean[[i]] <- CreateSeuratObject(counts = CREa1ventral_list[[i]]@assays[[counts_to_use]])
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$orig.ident, col.name = "orig.ident")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$experiment, col.name = "experiment")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$tissue, col.name = "tissue")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$cell_nuclei, col.name = "cell_nuclei")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$availability, col.name = "availability")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$sex, col.name = "sex")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$percent_mt, col.name = "percent_mt")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$percent_rRNA, col.name = "percent_rRNA")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$percent_rProt, col.name = "percent_rProt")
+	CREa1ventral_list_clean[[i]] <- AddMetaData(object = CREa1ventral_list_clean[[i]], metadata = CREa1ventral_list[[i]]$percent_hsp, col.name = "percent_hsp")
+}
+names(CREa1ventral_list_clean) <- names(CREa1ventral_list)
+CREa1ventral_list_clean
+```
+
+
+
+
+
+### Save list
+
+```{r}
+write_rds(x = CREa1ventral_list_clean, file = "../../proj136/analyses/rds_files/subclustering_CREa1ventral_devage_def1__seu_list_clean--round1.rds")
+```
+
+
+
+
+# Normalize
+
+
+```{r warning=FALSE, message=FALSE}
+
+n_var_features <- 500
+
+for (i in seq_along(CREa1ventral_list_clean)) {
+    CREa1ventral_list_clean[[i]] <- NormalizeData(object = CREa1ventral_list_clean[[i]],assay = "RNA")
+    CREa1ventral_list_clean[[i]] <- FindVariableFeatures(object = CREa1ventral_list_clean[[i]],
+                                                  selection.method = "mean.var.plot",     # "mean.var.plot" or "vst"
+                                                  nfeatures = n_var_features,
+                                                  mean.cutoff = c(0.01,Inf),
+                                                  dispersion.cutoff = c(0.01, Inf))
+}
+```
+
+
+
+
+
+
+# Integrate
+
+```{r}
+var_features <- SelectIntegrationFeatures(object.list = CREa1ventral_list_clean, nfeatures = n_var_features)
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+var_features <- setdiff(var_features, iso_genes_remove)
+```
+
+
+```{r}
+CREa1ventral_seu <- merge(CREa1ventral_list_clean[[1]],
+		                unlist(CREa1ventral_list_clean[2:length(CREa1ventral_list_clean)]),
+		                merge.data = TRUE)
+
+VariableFeatures(CREa1ventral_seu) <- var_features
+CREa1ventral_seu
+```
+
+
+
+
+```{r}
+FetchData(object = CREa1ventral_seu, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+
+
+# Run PCA
+
+```{r}
+library(future)
+# plan("multisession", workers = 8)
+options(future.globals.maxSize = 8*1024*1024^2)
+
+DefaultAssay(CREa1ventral_seu) <- "RNA"
+CREa1ventral_seu <- ScaleData(
+    object = CREa1ventral_seu,
+    features = rownames(CREa1ventral_seu),
+    assay = "RNA",
+    vars.to.regress = NULL#c("experiment") #, "sex", "nCount_RNA", "percent_mt", "percent_hsp")
+)
+```
+
+
+```{r}
+# plan("multisession", workers = 8)
+CREa1ventral_seu <- RunPCA(CREa1ventral_seu, features = var_features, npcs = 100, approx = FALSE)
+
+plan("sequential")
+invisible(gc())
+```
+
+
+# Run Harmony
+
+```{r}
+library(harmony)
+CREa1ventral_seu <- RunHarmony(CREa1ventral_seu,
+                    group.by.vars = c("orig.ident", "experiment", "cell_nuclei"),
+                    lambda = c(1,1,1),
+                    # group.by.vars = c("experiment", "cell_nuclei"),
+                    # lambda = c(1,1),
+                    assay.use = "RNA")
+invisible(gc())
+```
+
+
+
+
+
+
+
+
+# Visualize
+
+## Plot PCA
+
+
+
+
+```{r fig.width=12, fig.height=20, warning=FALSE, message=FALSE}
+library(colorspace)
+library(cowplot)
+p_list <- list()
+for (i in 1:10) {
+    p_list[[i]] <- DimHeatmap(CREa1ventral_seu,
+                            reduction = "harmony",
+                            dims = i,
+                            cells = 500,
+                            balanced = TRUE,
+                            fast = FALSE) +
+        scale_fill_gradientn(colors = diverging_hcl(10, palette = "Vik"))
+}
+plot_grid(plotlist = p_list, ncol = 2)
+rm(p_list)
+invisible(gc())
+```
+
+
+## Run UMAP
+
+
+
+```{r}
+
+# test_pcs <- 20
+test_pcs <- seq(5, 45, 5)
+
+for (i in seq_along(test_pcs)) {
+    CREa1ventral_seu <- RunUMAP(CREa1ventral_seu, 
+		                    reduction = "harmony", 
+		                    dims = 1:test_pcs[[i]],
+		                    n.neighbors = 50,
+		                    n.epochs = 1000,
+		                    min.dist = 0.01,
+		                    spread = 5,
+		                    fast = FALSE,
+		                    verbose = TRUE,
+		                    reduction.name = paste0("umap_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("umap", test_pcs[[i]], "pcs_"))
+}
+
+CREa1ventral_seu@reductions[["umap"]] <- CREa1ventral_seu@reductions[["umap_20pcs"]]
+
+```
+
+
+```{r}
+
+for (i in seq_along(test_pcs)) {
+    CREa1ventral_seu <- RunTSNE(CREa1ventral_seu,
+		                    reduction = "harmony",
+		                    num_threads = 24,
+		                    verbose = F,
+		                    dims = 1:test_pcs[[i]],
+		                    do.fast = FALSE,
+		                    check_duplicates = F,
+		                    max_iter = 10000,
+		                    theta = 0.05,
+		                    reduction.name = paste0("tsne_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("tsne", test_pcs[[i]], "pcs_"))
+}
+
+CREa1ventral_seu@reductions[["tsne"]] <- CREa1ventral_seu@reductions[["tsne_20pcs"]]
+
+```
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = CREa1ventral_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+
+
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = CREa1ventral_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=10, fig.height=10}
+col_list <- scales::hue_pal()(length(unique(CREa1ventral_seu$experiment)))
+test_pc <- 20
+p <- list()
+for (i in 1:length(unique(CREa1ventral_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = CREa1ventral_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(CREa1ventral_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(CREa1ventral_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(CREa1ventral_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+
+
+```{r fig.width=10, fig.height=5}
+col_list <- scales::hue_pal()(length(unique(CREa1ventral_seu$sex)))
+test_pc <- 20
+p <- list()
+for (i in 1:length(unique(CREa1ventral_seu@meta.data[["sex"]]))) {
+  p[[i]] <- DimPlot(object = CREa1ventral_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "sex",
+                    pt.size = 0.4,
+                    order = c(unique(CREa1ventral_seu@meta.data[["sex"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(CREa1ventral_seu$sex)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(CREa1ventral_seu@meta.data[["sex"]])[i])
+}
+plot_grid(plotlist = p, ncol = 2)
+```
+
+
+
+
+
+
+```{r fig.width=8, fig.height=8}
+col_list <- scales::hue_pal()(length(unique(CREa1ventral_seu$experiment)))
+test_pc <- 20
+p <- list()
+for (i in 1:length(unique(CREa1ventral_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = CREa1ventral_seu,
+                    reduction = paste0("tsne_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(CREa1ventral_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(CREa1ventral_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(CREa1ventral_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+```{r fig.width=10, fig.height=5}
+col_list <- scales::hue_pal()(length(unique(CREa1ventral_seu$sex)))
+test_pc <- 20
+p <- list()
+for (i in 1:length(unique(CREa1ventral_seu@meta.data[["sex"]]))) {
+  p[[i]] <- DimPlot(object = CREa1ventral_seu,
+                    reduction = paste0("tsne_", test_pc, "pcs"),
+                    group.by = "sex",
+                    pt.size = 0.4,
+                    order = c(unique(CREa1ventral_seu@meta.data[["sex"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(CREa1ventral_seu$sex)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(CREa1ventral_seu@meta.data[["sex"]])[i])
+}
+plot_grid(plotlist = p, ncol = 2)
+```
+
+
+
+
+```{r}
+FetchData(object = CREa1ventral_seu, vars = "experiment") %>% 
+    dplyr::count(experiment)
+```
+
+
+
+
+
+
+# Clustering
+
+```{r}
+CREa1ventral_seu <- FindNeighbors(CREa1ventral_seu,
+                       reduction = "harmony",
+                       dims = 1:20,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+# in_conda <- R.home() %>% str_detect("R4_cbrg")
+# if (in_conda) {
+#     algorithm_use <- 4
+# } else {
+    algorithm_use <- 1
+# }
+
+CREa1ventral_seu <- FindClusters(CREa1ventral_seu,
+                        algorithm = algorithm_use,
+                        resolution = c(0.1,0.2,0.5,1,1.5,2,3,4,5,6,8,10),
+                        verbose = TRUE)
+```
+
+
+
+```{r}
+write_rds(x = CREa1ventral_seu, file = "../../proj136/analyses/rds_files/subclustering_CREa1ventral_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# CREa1ventral_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_CREa1ventral_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+```
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(CREa1ventral_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = CREa1ventral_seu, group.by = res[[i]],
+                           reduction = "umap_20pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(CREa1ventral_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = CREa1ventral_seu, group.by = res[[i]],
+                           reduction = "umap_20pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(CREa1ventral_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = CREa1ventral_seu, group.by = res[[i]],
+                           reduction = "tsne_20pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(CREa1ventral_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = CREa1ventral_seu, group.by = res[[i]],
+                           reduction = "tsne_20pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+```{r fig.width=10}
+FetchData(object = CREa1ventral_seu, vars = c("experiment","RNA_snn_res.2")) %>% 
+    dplyr::count(experiment, RNA_snn_res.2) %>% 
+    ggplot(aes(x = RNA_snn_res.2, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "stack")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = CREa1ventral_seu, vars = c("experiment","RNA_snn_res.2")) %>% 
+    dplyr::count(experiment,RNA_snn_res.2) %>% 
+    ggplot(aes(x = RNA_snn_res.2, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill") 
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = CREa1ventral_seu, vars = c("experiment", "cell_nuclei", "RNA_snn_res.2")) %>% 
+    dplyr::count(cell_nuclei, RNA_snn_res.2) %>%
+    ggplot(aes(x = RNA_snn_res.2, y = n, fill = cell_nuclei)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.5, colour = "white")
+```
+
+
+```{r fig.width=10}
+FetchData(object = CREa1ventral_seu, vars = c("sex", "RNA_snn_res.2")) %>% 
+    dplyr::count(sex, RNA_snn_res.2) %>%
+    ggplot(aes(x = RNA_snn_res.2, y = n, fill = sex)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.5, colour = "white")
+```
+
+
+
+```{r}
+FetchData(object = CREa1ventral_seu, vars = c("experiment", "sex", "RNA_snn_res.2")) %>% 
+    dplyr::count(RNA_snn_res.2, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+```{r}
+FetchData(object = CREa1ventral_seu, vars = c("experiment", "sex", "RNA_snn_res.2")) %>% 
+    dplyr::count(experiment, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Save
+
+
+```{r}
+getwd()
+```
+
+
+```{r}
+write_rds(x = CREa1ventral_seu, file = "../../proj136/analyses/rds_files/subclustering_CREa1ventral_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# CREa1ventral_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_CREa1ventral_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# CREa1ventral_seu
+```
+
+
+
+
+
+
+
+
+# Markers
+
+
+```{r}
+Idents(CREa1ventral_seu) <- "RNA_snn_res.2"
+markers_CREa1ventral <- FindAllMarkers(object = CREa1ventral_seu, assay = "RNA", test.use = "wilcox",only.pos = TRUE)
+markers_CREa1ventral
+```
+
+
+```{r}
+write_csv(x = markers_CREa1ventral, file = "../../proj136/analyses/markers/subclustering_CREa1ventral_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+# markers_CREa1ventral <- read_csv(file = "../../proj136/analyses/markers/subclustering_CREa1ventral_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+markers_CREa1ventral
+```
+
+
+
+```{r fig.width=10, fig.height=10}
+markers_CREa1ventral %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(CREa1ventral_seu, features = top10$gene) + 
+    scale_fill_continuous_diverging(palette = "Vik", rev = FALSE,
+                                    limits = c(-2,2), oob = scales::squish,
+                                    na.value = "white") +
+    NoLegend()
+```
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

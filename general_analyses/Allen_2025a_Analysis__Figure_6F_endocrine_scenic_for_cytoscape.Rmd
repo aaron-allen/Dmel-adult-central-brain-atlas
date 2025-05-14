@@ -1,0 +1,717 @@
+---
+title: "Sexed_Paper_1_Analysis__Figure_4_Endocrine_subcluster"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+
+
+
+# Scenic
+
+
+
+
+```{r}
+mast_celltype <- read_csv(file = "../../proj136/analyses/scenic/scenic_multi_endocrine/results.dir/aggregated.dir/raw.dir/endocrine.dir/pyscenic_r.dir/MAST_celltype_onevsall_comparison.csv")
+mast_celltype
+```
+
+```{r}
+mast_top15 <- mast_celltype %>% 
+	filter(p_val_adj < 0.0001) %>% 
+	group_by(cell_type) %>% 
+	top_n(n = 15, wt = "avg_diff")
+mast_top15
+```
+
+
+```{r}
+top_regulons <- mast_celltype %>% 
+	filter(p_val_adj < 0.0001) %>% 
+	group_by(cell_type) %>% 
+	top_n(n = 15, wt = "avg_diff") %>%
+    pull(regulon) %>%
+	unique() %>% 
+    sort()
+# top_regulons
+```
+
+
+
+
+```{r}
+high_confidence_regulons <- read_csv(file = "../../proj136/analyses/scenic/scenic_multi_endocrine/results.dir/aggregated.dir/raw.dir/endocrine.dir/high_confidence_regulons.csv")
+high_confidence_regulons
+```
+
+
+
+
+```{r}
+cell_type_high_confidence_regulons <- high_confidence_regulons %>% 
+    filter(!str_detect(string = regulon_name, pattern = fixed("(-)"))) %>% 
+    filter(regulon_name %in% top_regulons)
+cell_type_high_confidence_regulons
+```
+
+
+
+```{r}
+cell_type_high_confidence_regulons <- cell_type_high_confidence_regulons %>% 
+    mutate(regulon_name_new = str_remove(string = regulon_name, pattern = fixed("(+)")))
+cell_type_high_confidence_regulons
+```
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(gene_name == "sv")
+```
+
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new == "kay")
+```
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new == "sv")
+```
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+
+
+```{r}
+endocrine_cluster_markers <- read_csv(file = "../../proj136/analyses/markers/endocrine_NEW_pub_cluster_markers_RNA_snn_res_2.csv")
+endocrine_cluster_markers
+```
+
+```{r}
+top_markers <- endocrine_cluster_markers %>% 
+    filter(p_val_adj < 0.05) %>%
+    pull(gene) %>% 
+    unique() %>% 
+    sort()
+# top_markers
+```
+
+
+```{r}
+cell_type_high_confidence_regulons <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% top_markers)
+cell_type_high_confidence_regulons
+```
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+```{r}
+tfs <- read_tsv("../../../aallen/gene_lists/gene_sets/TFs.tsv", col_names = "gene")
+```
+
+
+```{r}
+cell_type_high_confidence_regulons <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% tfs$gene)
+cell_type_high_confidence_regulons
+
+```
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+
+```{r}
+cell_type_high_confidence_regulons_for_cytoscape <- cell_type_high_confidence_regulons %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons_for_cytoscape
+```
+
+
+
+
+```{r}
+regulon_keep <- cell_type_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    filter(n < 100) %>% 
+    pull(regulon_name_new)
+
+cell_type_high_confidence_regulons_for_cytoscape_slim <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% regulon_keep) %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons_for_cytoscape_slim
+```
+
+
+```{r}
+write_csv(x = cell_type_high_confidence_regulons_for_cytoscape, file = "../../proj136/analyses/scenic/scenic_multi_endocrine/results.dir/aggregated.dir/raw.dir/endocrine.dir/cell_type_high_confidence_regulons_for_cytoscape.csv")
+write_csv(x = cell_type_high_confidence_regulons_for_cytoscape_slim, file = "../../proj136/analyses/scenic/scenic_multi_endocrine/results.dir/aggregated.dir/raw.dir/endocrine.dir/cell_type_high_confidence_regulons_for_cytoscape_slim.csv")
+```
+
+
+
+
+
+
+
+# Filter Regulons
+
+
+
+
+
+```{r}
+max_umi <- apply(endocrine_seu@assays$RNA@counts, 1, function(x) max(x))
+max_umi <- as.data.frame(max_umi)
+max_umi <- rownames_to_column(max_umi)
+max_umi
+```
+
+
+
+```{r}
+sum_umi <- apply(endocrine_seu@assays$RNA@counts, 1, function(x) sum(x))
+sum_umi <- as.data.frame(sum_umi)
+sum_umi <- rownames_to_column(sum_umi)
+sum_umi
+```
+
+
+```{r}
+gene_exp <- dplyr::inner_join(max_umi, sum_umi, by = "rowname")
+gene_exp
+```
+
+```{r}
+filtered_genes <- gene_exp %>% 
+	filter(max_umi > 20) %>% 
+	filter(sum_umi > 200) %>% 
+	# filter(rowname == "TfAP-2")
+	pull(rowname)
+# filtered_genes
+```
+
+
+
+```{r}
+cell_type_high_confidence_regulons
+```
+
+
+```{r}
+
+cell_type_high_confidence_regulons__exp_genes <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% filtered_genes) %>% 
+    filter(gene_name %in% filtered_genes)
+cell_type_high_confidence_regulons__exp_genes
+
+```
+
+
+```{r}
+cell_type_high_confidence_regulons__exp_genes %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+
+```{r}
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape <- cell_type_high_confidence_regulons__exp_genes %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape
+```
+
+
+
+
+```{r}
+regulon_keep <- cell_type_high_confidence_regulons__exp_genes %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    filter(n < 100) %>% 
+    pull(regulon_name_new)
+
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim <- cell_type_high_confidence_regulons__exp_genes %>% 
+    filter(regulon_name_new %in% regulon_keep) %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim
+```
+
+
+```{r}
+write_csv(x = cell_type_high_confidence_regulons__exp_genes_for_cytoscape, file = "../../proj136/analyses/scenic/scenic_multi_endocrine/results.dir/aggregated.dir/raw.dir/endocrine.dir/endocrine_cell_type_high_confidence_regulons__exp_genes_for_cytoscape.csv")
+write_csv(x = cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim, file = "../../proj136/analyses/scenic/scenic_multi_endocrine/results.dir/aggregated.dir/raw.dir/endocrine.dir/endocrine_cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim.csv")
+```
+
+
+
+
+
+
+
+
+
+# Hugin
+
+
+
+
+
+
+## hugin vs all cluster markers
+
+```{r}
+hugin_vs_all_metadata <- FetchData(object = endocrine_seu, vars = c("RNA_snn_res.8")) %>% 
+	rownames_to_column("cell_id") %>% 
+	left_join(endocrine_seu@reductions[["umap_60pcs"]]@cell.embeddings %>% 
+			  	as.data.frame() %>% 
+			  	rownames_to_column("cell_id"),
+			  by = "cell_id") %>% 
+	dplyr::mutate(hugin = if_else(RNA_snn_res.8 %in% c(15,20,33) &
+								  	(umap60pcs_1 > 0 & umap60pcs_1 < 50) &
+								  	(umap60pcs_2 > 0 & umap60pcs_2 < 50), 
+								  "hugin", "not_hugin"))
+endocrine_seu <- AddMetaData(object = endocrine_seu, metadata = hugin_vs_all_metadata$hugin, col.name = "hugin")
+```
+
+
+
+```{r fig.width=10, fig.height=8}
+DimPlot(object = endocrine_seu, 
+		group.by = "RNA_snn_res.8",
+		reduction = "umap_60pcs", 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+```{r fig.width=10, fig.height=8}
+DimPlot(object = endocrine_seu, 
+		group.by = "hugin",
+		reduction = "umap_60pcs", 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+Idents(endocrine_seu) <- "hugin"
+all_hugin_cluster_markers <- FindMarkers(object = endocrine_seu, 
+										 ident.1 = "hugin", 
+										 ident.2 = "not_hugin", 
+										 logfc.threshold = 0, 
+										 min.pct = 0, 
+										 min.diff.pct = 0, 
+										 only.pos = TRUE) %>% 
+	rownames_to_column("gene")
+all_hugin_cluster_markers
+```
+
+
+```{r}
+all_hugin_cluster_markers %>% 
+	filter(gene == "luna")
+```
+
+
+
+```{r}
+hug_subset
+```
+
+
+
+```{r}
+Idents(endocrine_seu) <- "hugin"
+hug_subset <- subset(x = endocrine_seu, ident = "hugin")
+hug_subset
+```
+
+
+```{r fig.width=10, fig.height=8}
+DimPlot(object = hug_subset, 
+		group.by = "RNA_snn_res.8",
+		reduction = "umap_60pcs", 
+        label = TRUE, 
+        label.box = FALSE,
+		label.size = 6,
+		repel = TRUE) + 
+    coord_fixed() +
+    NoLegend() +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+```{r}
+Idents(hug_subset) <- "RNA_snn_res.8"
+between_hugin_cluster_markers <- FindAllMarkers(object = hug_subset, 
+												 logfc.threshold = 0, 
+												 min.pct = 0, 
+												 min.diff.pct = 0, 
+												 only.pos = TRUE)
+between_hugin_cluster_markers
+```
+
+
+
+
+
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(gene_name == "Hug")
+```
+
+
+
+```{r}
+max_umi <- apply(hug_subset@assays$RNA@counts, 1, function(x) max(x))
+max_umi <- as.data.frame(max_umi)
+max_umi <- rownames_to_column(max_umi)
+# max_umi
+
+sum_umi <- apply(hug_subset@assays$RNA@counts, 1, function(x) sum(x))
+sum_umi <- as.data.frame(sum_umi)
+sum_umi <- rownames_to_column(sum_umi)
+# sum_umi
+
+gene_exp <- dplyr::inner_join(max_umi, sum_umi, by = "rowname")
+gene_exp
+```
+
+
+```{r}
+gene_exp %>% filter(rowname == "opa")
+```
+
+
+
+```{r}
+gene_exp %>% filter(rowname == "Ilp3")
+```
+
+
+```{r}
+filtered_genes <- gene_exp %>% 
+	filter(max_umi > 5) %>% 
+	filter(sum_umi > 50) %>% 
+	# filter(rowname == "TfAP-2")
+	pull(rowname)
+# filtered_genes
+```
+
+
+
+```{r}
+cell_type_high_confidence_regulons
+```
+
+
+```{r}
+
+cell_type_high_confidence_regulons__exp_genes <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% filtered_genes) %>% 
+    filter(gene_name %in% filtered_genes)
+cell_type_high_confidence_regulons__exp_genes
+
+```
+
+
+```{r}
+cell_type_high_confidence_regulons__exp_genes %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+
+
+
+
+
+
+```{r}
+all_hugin_cluster_markers %>% 
+	# rownames_to_column("gene") %>% 
+    filter(gene %in% tfs$gene) %>% 
+    filter(p_val_adj < 0.05) %>% 
+    arrange(desc(avg_log2FC))
+```
+
+
+```{r}
+between_hugin_cluster_markers %>% 
+    filter(gene %in% tfs$gene) %>% 
+    filter(p_val_adj < 0.05) %>% 
+    arrange(desc(avg_log2FC))
+```
+
+
+
+```{r}
+
+
+all_hug_tfs <- all_hugin_cluster_markers %>% 
+    filter(gene %in% tfs$gene) %>% 
+    filter(p_val_adj < 0.05) %>% 
+    pull(gene) %>% 
+	unique() %>% 
+	sort()
+
+
+
+
+between_hug_tfs <- between_hugin_cluster_markers %>% 
+    filter(gene %in% tfs$gene) %>% 
+    filter(p_val_adj < 0.05) %>% 
+    pull(gene) %>% 
+	unique() %>% 
+	sort()
+
+
+
+hug_high_confidence_regulons <- cell_type_high_confidence_regulons__exp_genes %>% 
+    filter(regulon_name_new %in% all_hug_tfs |
+    	   regulon_name_new %in% between_hug_tfs
+    	  )
+hug_high_confidence_regulons
+
+
+```
+
+
+
+```{r}
+hug_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+
+```{r}
+hugin_vs_not <- all_hugin_cluster_markers %>% filter(p_val_adj < 0.05) %>% pull(gene) %>% unique() %>% sort()
+cluster_15 <- between_hugin_cluster_markers %>% filter(cluster == 15) %>% filter(p_val_adj < 0.05) %>% pull(gene) %>% unique() %>% sort()
+cluster_20 <- between_hugin_cluster_markers %>% filter(cluster == 20) %>% filter(p_val_adj < 0.05) %>% pull(gene) %>% unique() %>% sort()
+cluster_33 <- between_hugin_cluster_markers %>% filter(cluster == 33) %>% filter(p_val_adj < 0.05) %>% pull(gene) %>% unique() %>% sort()
+```
+
+```{r}
+between_hugin_cluster_markers %>% filter(cluster == 15) %>% filter(p_val_adj < 0.05) %>% filter(gene == "luna")
+```
+
+
+```{r}
+hug_high_confidence_regulons
+```
+
+```{r}
+hug_high_confidence_regulons %>% 
+	filter(gene_name %in% c(hugin_vs_not, cluster_15, cluster_20, cluster_33))
+```
+
+```{r}
+212/484
+```
+
+
+```{r}
+cell_type_high_confidence_regulons_for_cytoscape_hug <- hug_high_confidence_regulons %>% 
+	dplyr::mutate(hugin_vs_not_marker = if_else(gene_name %in% hugin_vs_not, "yes", "no"),
+				  between_marker = if_else(gene_name %in% c(cluster_15, cluster_20, cluster_33), "yes", "no"),
+				  between_marker_2 = if_else(gene_name %in% cluster_15, "cluster_15",
+				  						   if_else(gene_name %in% cluster_20, "cluster_20",
+				  						   		if_else(gene_name %in% cluster_33, "cluster_33", "no")
+				  						   		)
+				  						   ),
+				  
+				  cluster_15_marker = if_else(gene_name %in% cluster_15, "yes", "no"),
+				  cluster_20_marker = if_else(gene_name %in% cluster_20, "yes", "no"),
+				  cluster_33_marker = if_else(gene_name %in% cluster_33, "yes", "no")
+				  ) %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons_for_cytoscape_hug
+```
+
+
+
+
+```{r}
+regulon_keep <- hug_high_confidence_regulons %>%
+    group_by(regulon_name_new) %>%
+    tally() %>%
+    filter(n < 100) %>%
+    pull(regulon_name_new)
+
+cell_type_high_confidence_regulons_for_cytoscape_hug_slim <- cell_type_high_confidence_regulons_for_cytoscape_hug %>% 
+    filter(source %in% regulon_keep) 
+cell_type_high_confidence_regulons_for_cytoscape_hug_slim
+```
+
+
+```{r}
+write_csv(x = cell_type_high_confidence_regulons_for_cytoscape_hug, file = "../../proj136/analyses/scenic/scenic_multi_endocrine/results.dir/aggregated.dir/raw.dir/endocrine.dir/endocrine_cell_type_high_confidence_regulons_for_cytoscape_hug.csv")
+write_csv(x = cell_type_high_confidence_regulons_for_cytoscape_hug_slim, file = "../../proj136/analyses/scenic/scenic_multi_endocrine/results.dir/aggregated.dir/raw.dir/endocrine.dir/endocrine_cell_type_high_confidence_regulons_for_cytoscape_hug_slim.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+

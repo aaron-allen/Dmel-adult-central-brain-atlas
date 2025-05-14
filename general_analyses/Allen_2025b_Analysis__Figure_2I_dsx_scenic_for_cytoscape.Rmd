@@ -1,0 +1,1293 @@
+---
+title: "Allen_2025b_Analysis__Figure_2I_dsx_scenic_for_cytoscape"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+```
+
+```{r}
+dsx_scenic <- read_rds("../../proj136/analyses/scenic/scenic_multi_dsx/results.dir/aggregated.dir/raw.dir/dsx.dir/pyscenic_r.dir/scenic_seurat_raw.rds")
+dsx_scenic
+```
+
+
+```{r}
+dsx_scenic@assays$scenic %>% rownames()
+```
+
+
+```{r}
+dsx_seu_NEW <- read_rds("../../proj136/analyses/rds_files/subclustering_dsx__seu--round3--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+dsx_seu_NEW
+```
+
+
+
+```{r}
+dsx_scenic <- subset(x = dsx_scenic, cells = colnames(dsx_seu_NEW))
+dsx_scenic
+```
+
+
+
+# Scenic
+
+
+## Some Plots
+
+```{r}
+dsx_scenic$cell_type %>% unique()
+```
+
+```{r}
+colours_dsx <- c("#E32B1F", "#E96344", "#F4A98E", "#BDAB98", "#00AC99", "#60C1D8")
+```
+
+
+```{r fig.width=12, fig.height=12}
+
+reductions_to_plot <- dsx_scenic@reductions %>% names() %>% str_subset("scenic_umap_")
+
+for (i in seq_along(reductions_to_plot)) {
+    plot(DimPlot(object = dsx_scenic, reduction = reductions_to_plot[[i]], group.by = "cell_type", cols = colours_dsx, pt.size = 2) + coord_fixed())
+}
+
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+reductions_to_plot <- dsx_scenic@reductions %>% names() %>% str_subset("scenic_tsne_")
+
+for (i in seq_along(reductions_to_plot)) {
+    plot(DimPlot(object = dsx_scenic, reduction = reductions_to_plot[[i]], group.by = "cell_type", cols = colours_dsx, pt.size = 2) + coord_fixed())
+}
+
+```
+
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- dsx_scenic@reductions %>% names() %>% str_subset("scenic_umap_")
+
+for (i in seq_along(reductions_to_plot)) {
+    plot(DimPlot(object = dsx_scenic, reduction = reductions_to_plot[[i]], group.by = "RNA_snn_res.1", pt.size = 2) + scale_colour_discrete_qualitative(palette = "Set 2") + coord_fixed())
+}
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- dsx_scenic@reductions %>% names() %>% str_subset("scenic_tsne_")
+
+for (i in seq_along(reductions_to_plot)) {
+    plot(DimPlot(object = dsx_scenic, reduction = reductions_to_plot[[i]], group.by = "RNA_snn_res.1", pt.size = 3) + scale_colour_discrete_qualitative(palette = "Set 2") + coord_fixed())
+}
+
+```
+
+
+
+
+
+## Re-Run markers
+
+
+```{r}
+
+params <- list()
+
+params$datatype <- "raw"
+
+params$condition <- "sex"
+params$celltype <- "cell_type"
+params$celltype_condition <- "cell_type_sexed"
+
+params$reference_condition <- "female"
+params$latent_variables <- "experiment"
+params$diff_exp_test <- "wilcox"
+params$FDR_threshold <- 0.05
+params$top_n <- 5
+
+params$results_directory <- "../../proj136/analyses/scenic/scenic_multi_dsx/results.dir/aggregated.dir/raw.dir/dsx.dir/pyscenic_r.dir/"
+
+
+
+```
+
+
+
+
+#### Stats to identify regulons that are differentially-expressed between conditions or cell types or celltypes_conditions
+
+```{r diff-reg-celltype}
+# Latent variables for test
+if (params$latent_variables == "None" | params$diff_exp_test == "wilcox") {
+    latent_variables <- NULL
+} else {
+    latent_variables <- params$latent_variables
+}
+
+# Cell type - one vs. all
+DefaultAssay(dsx_scenic) <- "scenic"
+Idents(dsx_scenic) <- params$celltype
+
+# if (params$parallelize) {
+#     plan(params$futures_plan, workers = params$futures_n_cores)
+#     options(future.globals.maxSize = params$futures_ram * 1024^3)
+# }
+markers_celltype <- FindAllMarkers(object = dsx_scenic,
+                                   slot = "scale.data",
+                                   only.pos = TRUE,
+                                   logfc.threshold = 0,
+                                   min.pct = 0,
+                                   test.use = params$diff_exp_test,
+                                   latent.vars = latent_variables,
+                                   verbose = TRUE)
+# if (params$parallelize) {
+#     plan("sequential")
+# }
+
+markers_celltype <- markers_celltype %>%
+    dplyr::rename(cell_type = cluster, regulon = gene) #%>% 
+    # filter(p_val_adj < 0.05)
+
+# write_csv(markers_celltype,
+#           paste0(params$results_directory, params$diff_exp_test,
+#                  "_celltype_onevsall_comparison.csv")
+#           )
+```
+
+
+
+```{r}
+markers_celltype %>% 
+    dplyr::filter(p_val_adj < 0.05) %>% 
+    dplyr::filter(regulon == "rn(+)")
+```
+
+```{r}
+markers_celltype %>% 
+    dplyr::filter(p_val_adj < 0.05) %>% 
+    dplyr::filter(regulon == "tup(+)")
+```
+
+
+```{r}
+markers_celltype %>% 
+    dplyr::filter(p_val_adj < 0.05) %>% 
+    dplyr::filter(regulon == "bab1(+)")
+```
+
+
+```{r}
+markers_celltype %>% 
+    dplyr::filter(p_val_adj < 0.05) %>% 
+    dplyr::filter(regulon == "Dif(+)")
+```
+
+
+```{r}
+markers_celltype %>% 
+    dplyr::filter(p_val_adj < 0.05) %>% 
+    dplyr::filter(regulon == "RunxA(+)")
+```
+
+
+```{r}
+markers_celltype %>% 
+    dplyr::filter(p_val_adj < 0.05) %>% 
+    dplyr::filter(regulon == "luna(+)")
+```
+
+
+
+
+
+
+
+```{r}
+markers_celltype %>% 
+    filter(regulon == "otp(+)")
+    # filter(cell_type == "pC1")
+```
+
+```{r}
+markers_celltype %>% 
+    # filter(regulon == "otp(+)") 
+    filter(cell_type == "pC1")
+```
+
+
+
+Condition - one vs. all
+
+```{r warning=FALSE}
+if (params$condition != "None") {
+
+    # if (params$parallelize) {
+    #     plan(params$futures_plan, workers = params$futures_n_cores)
+    #     options(future.globals.maxSize = params$futures_ram * 1024^3)
+    # }
+
+    markers_condition_by_celltype_list <- list()
+    DefaultAssay(dsx_scenic) <- "scenic"
+    Idents(dsx_scenic) <- params$celltype
+    celltypes <- sort(as.character(unique(dsx_scenic@meta.data[[params$celltype]])))
+
+    condition_options <- sort(unique(dsx_scenic@meta.data[[params$condition]]))
+    object_metadata <- FetchData(object = dsx_scenic,
+                                 vars = c(params$condition, params$celltype)) %>%
+        dplyr::rename(condition = params$condition, celltype = params$celltype) %>%
+        dplyr::count(condition, celltype, .drop = FALSE)
+
+    for (ii in seq_along(celltypes)) {
+
+        num_condition_1_cells <- object_metadata %>% filter(condition == condition_options[[1]] & celltype == celltypes[ii]) %>% pull(n)
+        num_condition_2_cells <- object_metadata %>% filter(condition == condition_options[[2]] & celltype == celltypes[ii]) %>% pull(n)
+        min_num_cells <- min(num_condition_1_cells, num_condition_2_cells)
+
+        if (min_num_cells > 3) {
+            markers <- FindMarkers(object = dsx_scenic,
+                                   slot = "scale.data",
+                                   ident.1 = condition_options[[1]],
+                                   ident.2 = condition_options[[2]],
+                                   group.by = params$condition,
+                                   subset.ident = celltypes[ii],
+                                   test.use = params$diff_exp_test,
+                                   latent.vars = latent_variables,
+                                   logfc.threshold = 0,
+                                   min.pct = 0,
+                                   only.pos = FALSE,
+                                   verbose = TRUE
+                                   ) %>%
+                rownames_to_column(var = "regulon") %>%
+                mutate(cell_type = celltypes[ii])
+            markers_condition_by_celltype_list[[celltypes[ii]]] <- markers
+            gc()
+        }
+    }
+    markers_condition_by_celltype <- bind_rows(markers_condition_by_celltype_list) %>%
+        dplyr::rename(!!paste0("pct_", condition_options[[1]]) := "pct.1") %>%
+        dplyr::rename(!!paste0("pct_", condition_options[[2]]) := "pct.2") %>%
+        filter(p_val_adj < 0.05)
+
+    # if (params$parallelize) {
+    #     plan("sequential")
+    # }
+
+    # write_csv(markers_condition_by_celltype,
+    #           paste0(params$results_directory, "/", params$diff_exp_test,
+    #                  "_condition_by_celltype_comparison.csv")
+    #           )
+}
+```
+
+
+
+
+
+
+
+
+### Top n regulons per group - average expression per cluster or per condition
+
+```{r }
+Idents(dsx_scenic) <- params$celltype
+```
+
+```{r}
+
+top_n_celltype <- markers_celltype %>%
+    filter(str_detect(string = regulon, pattern = fixed("(-)"), negate = TRUE)) %>% 
+    group_by(cell_type) %>%
+    filter(p_val_adj < params$FDR_threshold) %>%
+    slice_max(order_by = avg_diff, n = params$top_n)
+
+if (params$condition != "None") {
+	top_n_cellsubtype_condition <- markers_condition_by_celltype %>%
+        filter(str_detect(string = regulon, pattern = fixed("(-)"), negate = TRUE)) %>% 
+	    group_by(cell_type) %>%
+	    filter(p_val_adj < params$FDR_threshold) %>%
+	    slice_max(order_by = abs(avg_diff), n = params$top_n)
+}
+
+```
+
+
+
+
+
+
+```{r fig.width=6, fig.height=6}
+
+Idents(dsx_scenic) <- params$celltype
+
+p <- DotPlot(
+		object = dsx_scenic, 
+		assay = "scenic",
+		features = unique(top_n_celltype$regulon),
+		cols = "RdYlBu", 
+		col.max = 3, 
+		col.min = -3,
+		cluster.idents = FALSE
+		) +
+    # RotatedAxis() +
+    coord_flip() +
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+```
+
+
+
+
+
+```{r fig.width=10, fig.height=4}
+
+Idents(dsx_scenic) <- params$celltype
+
+p <- DotPlot(
+		object = dsx_scenic, 
+		assay = "scenic",
+		features = unique(top_n_celltype$regulon),
+		cols = "RdYlBu", 
+		col.max = 3, 
+		col.min = -3,
+		cluster.idents = FALSE
+		) +
+    # RotatedAxis() +
+    # coord_flip() +
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+```
+
+
+
+
+
+
+
+```{r fig.width=6, fig.height=6}
+
+Idents(dsx_scenic) <- params$celltype
+
+p <- DotPlot(
+		object = dsx_scenic, 
+		assay = "scenic",
+		features = unique(top_n_cellsubtype_condition$regulon),
+		split.by = "sex",
+		cols = "RdYlBu", 
+		col.max = 3, 
+		col.min = -3,
+		cluster.idents = FALSE
+		) +
+    # RotatedAxis() +
+    coord_flip() +
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+```
+
+
+```{r fig.width=10, fig.height=4}
+
+Idents(dsx_scenic) <- params$celltype
+
+p <- DotPlot(
+		object = dsx_scenic, 
+		assay = "scenic",
+		features = unique(top_n_cellsubtype_condition$regulon),
+		split.by = "sex",
+		cols = "RdYlBu", 
+		col.max = 3, 
+		col.min = -3,
+		cluster.idents = FALSE
+		) +
+    # RotatedAxis() +
+    # coord_flip() +
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+```
+
+
+```{r}
+top_n_cellsubtype_condition
+```
+
+
+
+
+
+
+
+
+
+
+# Filter Regulons
+
+
+
+```{r}
+mast_top15 <- markers_celltype %>% 
+	filter(p_val_adj < 0.0001) %>% 
+	group_by(cell_type) %>% 
+	top_n(n = 15, wt = "avg_diff")
+mast_top15
+```
+
+
+```{r}
+top_regulons <- markers_celltype %>% 
+	filter(p_val_adj < 0.0001) %>% 
+	group_by(cell_type) %>% 
+	top_n(n = 15, wt = "avg_diff") %>%
+    pull(regulon) %>%
+	unique() %>% 
+    sort()
+top_regulons
+```
+
+
+
+
+```{r}
+
+high_confidence_regulons <- read_csv(file = "../../proj136/analyses/scenic/scenic_multi_dsx/results.dir/aggregated.dir/raw.dir/dsx.dir/high_confidence_regulons.csv")
+high_confidence_regulons
+
+```
+
+
+
+
+```{r}
+cell_type_high_confidence_regulons <- high_confidence_regulons %>% 
+    filter(!str_detect(string = regulon_name, pattern = fixed("(-)"))) %>% 
+    filter(regulon_name %in% top_regulons)
+cell_type_high_confidence_regulons
+```
+
+
+
+```{r}
+cell_type_high_confidence_regulons <- cell_type_high_confidence_regulons %>% 
+    mutate(regulon_name_new = str_remove(string = regulon_name, pattern = fixed("(+)")))
+cell_type_high_confidence_regulons
+```
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(gene_name == "sv")
+```
+
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new == "otp")
+```
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new == "bsh")
+```
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new == "TfAP-2")
+```
+
+
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new == "sv")
+```
+
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+
+
+
+
+
+```{r}
+dsx_cluster_markers <- read_csv(file = "../../proj136/analyses/markers/subclustering_dsx_seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+dsx_cluster_markers
+```
+
+```{r}
+top_markers <- dsx_cluster_markers %>% 
+    filter(p_val_adj < 0.05) %>%
+    # filter(avg_log2FC > 1) %>% 
+    pull(gene) %>% 
+    unique() %>% 
+    sort()
+# top_markers
+```
+
+
+```{r}
+cell_type_high_confidence_regulons <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% top_markers)
+cell_type_high_confidence_regulons
+```
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+```{r}
+tfs <- read_tsv("../../../aallen/gene_lists/gene_sets/TFs__6_30.tsv")
+tfs
+```
+
+
+```{r}
+
+cell_type_high_confidence_regulons <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% tfs$gene)
+cell_type_high_confidence_regulons
+
+```
+
+
+```{r}
+cell_type_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+
+```{r}
+cell_type_high_confidence_regulons_for_cytoscape <- cell_type_high_confidence_regulons %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons_for_cytoscape
+```
+
+
+
+
+```{r}
+regulon_keep <- cell_type_high_confidence_regulons %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    filter(n < 100) %>% 
+    pull(regulon_name_new)
+
+cell_type_high_confidence_regulons_for_cytoscape_slim <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% regulon_keep) %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons_for_cytoscape_slim
+```
+
+
+```{r}
+write_csv(x = cell_type_high_confidence_regulons_for_cytoscape, file = "../../proj136/analyses/scenic/scenic_multi_dsx/results.dir/aggregated.dir/raw.dir/dsx.dir/dsx_cell_type_high_confidence_regulons_for_cytoscape.csv")
+write_csv(x = cell_type_high_confidence_regulons_for_cytoscape_slim, file = "../../proj136/analyses/scenic/scenic_multi_dsx/results.dir/aggregated.dir/raw.dir/dsx.dir/dsx_cell_type_high_confidence_regulons_for_cytoscape_slim.csv")
+```
+
+
+
+
+
+
+```{r}
+max_umi <- apply(dsx_scenic@assays$RNA@counts, 1, function(x) max(x))
+max_umi <- as.data.frame(max_umi)
+max_umi <- rownames_to_column(max_umi)
+max_umi
+```
+
+
+
+```{r}
+sum_umi <- apply(dsx_scenic@assays$RNA@counts, 1, function(x) sum(x))
+sum_umi <- as.data.frame(sum_umi)
+sum_umi <- rownames_to_column(sum_umi)
+sum_umi
+```
+
+
+```{r}
+gene_exp <- dplyr::inner_join(max_umi, sum_umi, by = "rowname")
+gene_exp
+```
+
+
+```{r}
+
+genes <- c("TfAP-2", "otp", "opa", "Vsx1", "Vsx2", "bab1", "bab2", "drm", "Drgx", "dsx", "tup", "B-H1", "B-H2")
+
+gene_exp %>% filter(rowname %in% genes)
+
+```
+
+
+
+
+```{r}
+filtered_genes <- gene_exp %>% 
+	filter(max_umi > 2) %>%
+	filter(sum_umi > 80) %>%
+	pull(rowname)
+# filtered_genes
+```
+
+
+
+```{r}
+cell_type_high_confidence_regulons
+```
+
+
+```{r}
+
+cell_type_high_confidence_regulons__exp_genes <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% filtered_genes) %>% 
+    filter(gene_name %in% filtered_genes)
+cell_type_high_confidence_regulons__exp_genes
+
+```
+
+
+```{r}
+cell_type_high_confidence_regulons__exp_genes %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    arrange(desc(n))
+```
+
+
+```{r}
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape <- cell_type_high_confidence_regulons__exp_genes %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape
+```
+
+
+
+
+```{r}
+regulon_keep <- cell_type_high_confidence_regulons__exp_genes %>% 
+    group_by(regulon_name_new) %>% 
+    tally() %>% 
+    filter(n < 100) %>% 
+    pull(regulon_name_new)
+
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim <- cell_type_high_confidence_regulons__exp_genes %>% 
+    filter(regulon_name_new %in% regulon_keep) %>% 
+    dplyr::select(-regulon_name) %>% 
+    dplyr::rename("source" = "regulon_name_new") %>% 
+    dplyr::rename("target" = "gene_name") %>% 
+    dplyr::relocate(source, target)
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim
+```
+
+
+```{r}
+write_csv(x = cell_type_high_confidence_regulons__exp_genes_for_cytoscape, file = "../../proj136/analyses/scenic/scenic_multi_dsx/results.dir/aggregated.dir/raw.dir/dsx.dir/dsx_cell_type_high_confidence_regulons__exp_genes_for_cytoscape.csv")
+write_csv(x = cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim, file = "../../proj136/analyses/scenic/scenic_multi_dsx/results.dir/aggregated.dir/raw.dir/dsx.dir/dsx_cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim.csv")
+```
+
+
+
+
+
+
+
+
+### otp regulon
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+DimPlot(object = dsx_scenic, reduction = "scenic_tsne_30pcs", group.by = "cell_type", pt.size = 2, label = TRUE) + scale_colour_discrete_qualitative(palette = "Set 2") + coord_fixed()
+DimPlot(object = dsx_scenic, reduction = "scenic_tsne_30pcs", group.by = "RNA_snn_res.2", pt.size = 2, label = TRUE) + scale_colour_discrete_qualitative(palette = "Set 2") + coord_fixed()
+
+```
+
+18,14,0,13,3,7,12,11
+
+
+```{r}
+pC1_markers <- dsx_cluster_markers %>% 
+    filter(p_val_adj < 0.05) %>%
+    filter(cluster %in% c(18,14,0,13,3,7,12,11)) %>% 
+    # filter(avg_log2FC > 1) %>% 
+    pull(gene) %>% 
+    unique() %>% 
+    sort()
+
+
+```
+
+
+```{r}
+cell_type_high_confidence_regulons__exp_genes_for_cytoscape_slim %>% 
+    filter(source == "otp") %>% 
+    mutate(marker = if_else(target %in% pC1_markers, "yes", "no"))
+```
+
+
+top_markers
+
+```{r}
+top_markers <- dsx_cluster_markers %>% 
+    filter(p_val_adj < 0.05) %>%
+    # filter(avg_log2FC > 1) %>% 
+    pull(gene) %>% 
+    unique() %>% 
+    sort()
+# top_markers
+```
+
+
+```{r}
+cell_type_high_confidence_regulons <- cell_type_high_confidence_regulons %>% 
+    filter(regulon_name_new %in% top_markers)
+cell_type_high_confidence_regulons
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# pC1 focus
+
+
+
+
+
+## Re-Run markers
+
+
+```{r}
+
+params <- list()
+
+params$datatype <- "raw"
+
+params$condition <- "sex"
+params$celltype <- "RNA_snn_res.2"
+
+params$reference_condition <- "female"
+params$latent_variables <- "experiment"
+params$diff_exp_test <- "wilcox"
+params$FDR_threshold <- 0.05
+params$top_n <- 5
+
+params$results_directory <- "../../proj136/analyses/scenic/scenic_multi_dsx/results.dir/aggregated.dir/raw.dir/dsx.dir/pyscenic_r.dir/"
+
+
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+DimPlot(object = dsx_scenic, reduction = "scenic_tsne_30pcs", group.by = "cell_type", pt.size = 2, label = TRUE) + scale_colour_discrete_qualitative(palette = "Set 2") + coord_fixed()
+DimPlot(object = dsx_scenic, reduction = "scenic_tsne_30pcs", group.by = "RNA_snn_res.2", pt.size = 2, label = TRUE) + scale_colour_discrete_qualitative(palette = "Set 2") + coord_fixed()
+
+```
+
+```{r}
+Idents(dsx_scenic) <- "RNA_snn_res.2"
+pC1_scenic <- subset(x = dsx_scenic, idents = c(18,14,0,13,3,7,12,11))
+pC1_scenic
+```
+
+
+
+
+#### Stats to identify regulons that are differentially-expressed between conditions or cell types or celltypes_conditions
+
+```{r diff-reg-celltype}
+# Latent variables for test
+if (params$latent_variables == "None" | params$diff_exp_test == "wilcox") {
+    latent_variables <- NULL
+} else {
+    latent_variables <- params$latent_variables
+}
+
+# Cell type - one vs. all
+DefaultAssay(pC1_scenic) <- "scenic"
+Idents(pC1_scenic) <- params$celltype
+
+# if (params$parallelize) {
+#     plan(params$futures_plan, workers = params$futures_n_cores)
+#     options(future.globals.maxSize = params$futures_ram * 1024^3)
+# }
+markers_pC1_celltype <- FindAllMarkers(object = pC1_scenic,
+                                   slot = "scale.data",
+                                   only.pos = TRUE,
+                                   logfc.threshold = 0,
+                                   min.pct = 0,
+                                   test.use = params$diff_exp_test,
+                                   latent.vars = latent_variables,
+                                   verbose = TRUE)
+# if (params$parallelize) {
+#     plan("sequential")
+# }
+
+markers_pC1_celltype <- markers_pC1_celltype %>%
+    dplyr::rename(cell_type = cluster, regulon = gene) %>%
+    filter(p_val_adj < 0.05)
+
+# write_csv(markers_pC1_celltype,
+#           paste0(params$results_directory, params$diff_exp_test,
+#                  "_celltype_onevsall_comparison.csv")
+#           )
+```
+
+
+```{r}
+markers_pC1_celltype %>% 
+    filter(regulon == "otp(+)")
+    # filter(cell_type == "pC1")
+```
+
+```{r}
+markers_pC1_celltype %>% 
+    # filter(regulon == "otp(+)") 
+    filter(cell_type == "pC1")
+```
+
+
+
+
+```{r}
+if (params$condition != "None") {
+    Idents(pC1_scenic) <- params$condition
+
+    # if (params$parallelize) {
+    #     plan(params$futures_plan, workers = params$futures_n_cores)
+    #     options(future.globals.maxSize = params$futures_ram * 1024^3)
+    # }
+    markers_condition <-  FindAllMarkers(object = pC1_scenic,
+                                         slot = "scale.data",
+                                         only.pos = TRUE,
+                                         logfc.threshold = 0,
+                                         min.pct = 0,
+                                         test.use = params$diff_exp_test,
+                                         latent.vars = latent_variables,
+                                         verbose = FALSE)
+    # if (params$parallelize) {
+    #     plan("sequential")
+    # }
+
+    markers_condition <- markers_condition %>%
+        dplyr::rename(condition = cluster, regulon = gene) %>%
+        filter(p_val_adj < 0.05)
+
+    # write_csv(markers_condition,
+    #           paste0(results_directory, "/", params$diff_exp_test,
+    #                  "_condition_onevsall_comparison.csv")
+    #           )
+}
+```
+
+
+```{r warning=FALSE}
+if (params$condition != "None") {
+
+    # if (params$parallelize) {
+    #     plan(params$futures_plan, workers = params$futures_n_cores)
+    #     options(future.globals.maxSize = params$futures_ram * 1024^3)
+    # }
+
+    markers_pC1_condition_by_celltype_list <- list()
+    DefaultAssay(pC1_scenic) <- "scenic"
+    Idents(pC1_scenic) <- params$celltype
+    celltypes <- sort(as.character(unique(pC1_scenic@meta.data[[params$celltype]])))
+
+    condition_options <- sort(unique(pC1_scenic@meta.data[[params$condition]]))
+    object_metadata <- FetchData(object = pC1_scenic,
+                                 vars = c(params$condition, params$celltype)) %>%
+        dplyr::rename(condition = params$condition, celltype = params$celltype) %>%
+        dplyr::count(condition, celltype, .drop = FALSE)
+
+    for (ii in seq_along(celltypes)) {
+
+        num_condition_1_cells <- object_metadata %>% filter(condition == condition_options[[1]] & celltype == celltypes[ii]) %>% pull(n)
+        num_condition_2_cells <- object_metadata %>% filter(condition == condition_options[[2]] & celltype == celltypes[ii]) %>% pull(n)
+        min_num_cells <- min(num_condition_1_cells, num_condition_2_cells)
+
+        if (min_num_cells > 3) {
+            markers <- FindMarkers(object = pC1_scenic,
+                                   slot = "scale.data",
+                                   ident.1 = condition_options[[1]],
+                                   ident.2 = condition_options[[2]],
+                                   group.by = params$condition,
+                                   subset.ident = celltypes[ii],
+                                   test.use = params$diff_exp_test,
+                                   latent.vars = latent_variables,
+                                   logfc.threshold = 0,
+                                   min.pct = 0,
+                                   only.pos = FALSE,
+                                   verbose = TRUE
+                                   ) %>%
+                rownames_to_column(var = "regulon") %>%
+                mutate(cell_type = celltypes[ii])
+            markers_pC1_condition_by_celltype_list[[celltypes[ii]]] <- markers
+            gc()
+        }
+    }
+    markers_pC1_condition_by_celltype <- bind_rows(markers_pC1_condition_by_celltype_list) %>%
+        dplyr::rename(!!paste0("pct_", condition_options[[1]]) := "pct.1") %>%
+        dplyr::rename(!!paste0("pct_", condition_options[[2]]) := "pct.2") %>%
+        filter(p_val_adj < 0.05)
+
+    # if (params$parallelize) {
+    #     plan("sequential")
+    # }
+
+    # write_csv(markers_pC1_condition_by_celltype,
+    #           paste0(params$results_directory, "/", params$diff_exp_test,
+    #                  "_condition_by_celltype_comparison.csv")
+    #           )
+}
+```
+
+
+
+
+
+
+
+
+### Top n regulons per group - average expression per cluster or per condition
+
+```{r }
+Idents(pC1_scenic) <- params$celltype
+```
+
+```{r}
+
+top_n_celltype <- markers_pC1_celltype %>%
+    filter(str_detect(string = regulon, pattern = fixed("(-)"), negate = TRUE)) %>% 
+    group_by(cell_type) %>%
+    filter(p_val_adj < params$FDR_threshold) %>%
+    slice_max(order_by = avg_diff, n = params$top_n)
+
+if (params$condition != "None") {
+	top_n_condition <- markers_condition %>%
+	    group_by(condition) %>%
+	    filter(p_val_adj < params$FDR_threshold) %>%
+	    slice_max(order_by = avg_diff, n = params$top_n)
+	
+	top_n_cellsubtype_condition <- markers_pC1_condition_by_celltype %>%
+        filter(str_detect(string = regulon, pattern = fixed("(-)"), negate = TRUE)) %>% 
+	    group_by(cell_type) %>%
+	    filter(p_val_adj < params$FDR_threshold) %>%
+	    slice_max(order_by = abs(avg_diff), n = params$top_n)
+}
+
+```
+
+
+
+
+
+
+```{r fig.width=6, fig.height=6}
+
+Idents(pC1_scenic) <- params$celltype
+
+p <- DotPlot(
+		object = pC1_scenic, 
+		assay = "scenic",
+		features = unique(top_n_celltype$regulon),
+		cols = "RdYlBu", 
+		col.max = 3, 
+		col.min = -3,
+		cluster.idents = FALSE
+		) +
+    # RotatedAxis() +
+    coord_flip() +
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+```
+
+
+
+
+
+```{r fig.width=10, fig.height=4}
+
+Idents(pC1_scenic) <- params$celltype
+
+p <- DotPlot(
+		object = pC1_scenic, 
+		assay = "scenic",
+		features = unique(top_n_celltype$regulon),
+		cols = "RdYlBu", 
+		col.max = 3, 
+		col.min = -3,
+		cluster.idents = FALSE
+		) +
+    # RotatedAxis() +
+    # coord_flip() +
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+```
+
+
+
+
+
+
+
+```{r fig.width=6, fig.height=6}
+
+Idents(pC1_scenic) <- params$celltype
+
+p <- DotPlot(
+		object = pC1_scenic, 
+		assay = "scenic",
+		features = unique(top_n_cellsubtype_condition$regulon),
+		split.by = "sex",
+		cols = "RdYlBu", 
+		col.max = 3, 
+		col.min = -3,
+		cluster.idents = FALSE
+		) +
+    # RotatedAxis() +
+    coord_flip() +
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+```
+
+
+```{r fig.width=10, fig.height=4}
+
+Idents(pC1_scenic) <- params$celltype
+
+p <- DotPlot(
+		object = pC1_scenic, 
+		assay = "scenic",
+		features = unique(top_n_cellsubtype_condition$regulon),
+		split.by = "sex",
+		cols = "RdYlBu", 
+		col.max = 3, 
+		col.min = -3,
+		cluster.idents = FALSE
+		) +
+    # RotatedAxis() +
+    # coord_flip() +
+    FontSize(x.text = 9, y.text = 10, x.title = 8, y.title = 8)
+
+p <- p +
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
+    	  axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    	  axis.title.x = element_blank()
+    	  )
+plot(p)
+
+```
+
+
+```{r}
+top_n_cellsubtype_condition
+```
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+

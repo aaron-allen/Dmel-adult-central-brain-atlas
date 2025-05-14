@@ -1,0 +1,216 @@
+---
+title: "Allen_2025a_Analysis__Figure_1D_cell_count_corelation"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(
+    # dev = c("cairo_pdf"),
+    dev = c("png", "cairo_pdf"),
+    dev.args=list(bg="transparent"),
+    fig.align = "center",
+    fig.height = 5,
+    fig.width = 8.5,
+    dpi = 100,
+    pdf.options(encoding = "ISOLatin9.enc"),
+    fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                    format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+    fig.retina = 1,
+    warning = TRUE,
+    message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(colorspace)
+library(cowplot)
+```
+
+
+
+
+
+# Load data
+
+
+
+```{r load-meta-brain}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+meta_cb
+```
+
+
+
+
+
+
+
+Precision = TP ÷ (TP + FP) 
+Recall = TP ÷ (TP + FN)
+
+
+
+```{r}
+meta_cb@meta.data %>% colnames() %>% str_subset("sex")
+```
+
+
+
+
+```{r}
+meta_cb@meta.data %>% colnames() %>% str_subset("module")
+```
+
+
+```{r}
+meta_cb <- AddModuleScore(object = meta_cb, features = c(list("lncRNA:roX1", "lncRNA:roX2")), name = "modulscore_sex")
+```
+
+
+
+```{r}
+sex_metadata <- FetchData(object = meta_cb, vars = c("experiment", "sex", "modulscore_sex1"))
+sex_metadata
+```
+
+
+
+
+```{r}
+sex_metadata <- sex_metadata %>% 
+    filter(!experiment %in% c("aging", "thirst2", "species", "sleep")) %>% 
+    group_by(experiment) %>% 
+    mutate(
+        predicted_sex = if_else(modulscore_sex1 > 0, "male", "female"),
+        TP = if_else(sex == "male" & predicted_sex == "male", 1, 0),
+        TN = if_else(sex == "female" & predicted_sex == "female", 1, 0),
+        FP = if_else(sex == "female" & predicted_sex == "male", 1, 0),
+        FN = if_else(sex == "male" & predicted_sex == "female", 1, 0)
+    )
+sex_metadata
+```
+
+
+```{r}
+sex_metadata %>% 
+    summarise(
+        Precision = sum(TP) / sum(TP + FP),
+        Recall = sum(TP) / sum(TP + FN)
+    )
+```
+
+
+
+```{r}
+sex_metadata %>% 
+    summarise(
+        Precision = sum(TP) / sum(TP + FP),
+        Recall = sum(TP) / sum(TP + FN)
+    ) %>% 
+    gather("type", "value", -experiment) %>% 
+    ggplot(aes(x = type, y = value)) +
+        geom_bar(stat = "identity") +
+        # ylim(0.80,1.00) +
+        facet_wrap(~experiment)
+```
+
+
+
+
+```{r}
+sex_metadata <- sex_metadata %>% 
+    filter(!experiment %in% c("aging", "thirst2", "species", "sleep")) %>%
+    group_by(experiment) %>% 
+    mutate(
+        predicted_sex = if_else(modulscore_sex1 > 0, "male", "female"),
+        TN = if_else(sex == "male" & predicted_sex == "male", 1, 0),
+        TP = if_else(sex == "female" & predicted_sex == "female", 1, 0),
+        FN = if_else(sex == "female" & predicted_sex == "male", 1, 0),
+        FP = if_else(sex == "male" & predicted_sex == "female", 1, 0)
+    )
+sex_metadata
+```
+
+
+```{r}
+sex_metadata %>% 
+    summarise(
+        Precision = sum(TP) / sum(TP + FP),
+        Recall = sum(TP) / sum(TP + FN)
+    )
+```
+
+
+
+
+
+
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
+
+
+
+
+
+
+

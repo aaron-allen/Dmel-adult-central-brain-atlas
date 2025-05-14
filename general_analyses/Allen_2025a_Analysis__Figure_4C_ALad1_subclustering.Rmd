@@ -1,0 +1,862 @@
+---
+title: "Allen_2025a_Analysis__Figure_4_ALad1_subclustering"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load Data
+
+
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+DefaultAssay(meta_cb) <- "RNA"
+meta_cb
+```
+
+
+
+
+```{r warning= FALSE, message=FALSE, fig.width=14, fig.height=14}
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = TRUE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+p1 <- FeaturePlot(object = meta_cb,
+           features = "Oaz",
+           pt.size = 0.4, 
+		   max.cutoff = 2,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+
+p1 <- FeaturePlot(object = meta_cb,
+           features = "acj6",
+           pt.size = 0.4, 
+		   max.cutoff = 2,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+
+```
+
+
+
+```{r warning= FALSE, message=FALSE, fig.width=14, fig.height=14}
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.20",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = TRUE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+p1 <- FeaturePlot(object = meta_cb,
+           features = "Oaz",
+           pt.size = 0.4, 
+		   max.cutoff = 2,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+p1 <- FeaturePlot(object = meta_cb,
+           features = "acj6",
+           pt.size = 0.4, 
+		   max.cutoff = 2,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+
+```
+
+
+
+
+
+
+```{r}
+FetchData(object = meta_cb, vars = "RNA_snn_res.20") %>% 
+	filter(RNA_snn_res.20 %in% c(66,67,184)) %>% 
+	dplyr::count(RNA_snn_res.20)
+```
+
+
+
+
+
+```{r fig.height=14, fig.width=16}
+
+genes <- c("Oaz", "acj6", "kn", "C15", "vvl", "br", "Imp")
+plist <- FeaturePlot(
+            object = meta_cb, 
+            features = genes,
+            reduction = "tsne_240pcs",
+            combine = FALSE,
+            ncol = 1,
+            pt.size = 0.4,
+            # alpha = 0.1,
+            # min.cutoff = 1,
+            max.cutoff = 2,
+            # slot = "counts",
+            cols = c("lightsteelblue2", "black"), 
+            raster = FALSE,
+            raster.dpi = c(1024, 1024),
+            order = TRUE,
+            coord.fixed = TRUE
+        )
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r warning= FALSE, message=FALSE, fig.width=14, fig.height=14}
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.30",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = TRUE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+p1 <- FeaturePlot(object = meta_cb,
+           features = "Oaz",
+           pt.size = 0.4, 
+		   max.cutoff = 2,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+p1 <- FeaturePlot(object = meta_cb,
+           features = "acj6",
+           pt.size = 0.4, 
+		   max.cutoff = 2,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+
+```
+
+
+```{r}
+opn_cells <- FetchData(object = meta_cb, vars = "subcluster_clusters") %>%
+	filter(subcluster_clusters == "Achl_032") %>%
+	rownames()
+head(opn_cells)
+length(opn_cells)
+```
+
+
+
+
+```{r fig.width=14, fig.height=14}
+
+p1 <- DimPlot(object = meta_cb,
+			  cells.highlight = opn_cells,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+```{r}
+opn_sub <- subset(x = meta_cb, cells = opn_cells)
+opn_sub
+```
+
+```{r}
+opn_list <- SplitObject(object = opn_sub, split.by = "experiment")
+opn_list
+```
+
+
+
+
+
+```{r}
+colnames(meta_cb@meta.data)
+```
+
+
+
+```{r}
+opn_list_clean <- list()
+for (i in seq_along(opn_list)) {
+    counts_to_use <- "RNA"
+    opn_list_clean[[i]] <- CreateSeuratObject(counts = opn_list[[i]]@assays[[counts_to_use]], project = names(opn_list)[[i]])
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$orig.ident, col.name = "orig.ident")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$experiment, col.name = "experiment")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$experiment, col.name = "batch")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = "10x", col.name = "technology")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$tissue, col.name = "tissue")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$cell_nuclei, col.name = "cell_nuclei")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$availability, col.name = "availability")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$sex, col.name = "sex")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$percent_mt, col.name = "percent_mt")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$percent_rRNA, col.name = "percent_rRNA")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$percent_rProt, col.name = "percent_rProt")
+	opn_list_clean[[i]] <- AddMetaData(object = opn_list_clean[[i]], metadata = opn_list[[i]]$percent_hsp, col.name = "percent_hsp")
+}
+names(opn_list_clean) <- names(opn_list)
+opn_list_clean
+```
+
+
+
+
+### Remove Low Quality Cells
+
+
+
+```{r}
+
+cells_to_keep_file <- "../../proj136/analyses/cell_lists/subclustering_ALad1_metablob_cells_to_keep--round2.csv"
+
+if (file.exists(cells_to_keep_file)) {
+    cells_keep <- read_csv(file = cells_to_keep_file)
+    for (i in seq_along(opn_list_clean)) {
+        opn_list_clean[[i]] <-subset(opn_list_clean[[i]], cells = cells_keep$cell_id, invert = FALSE)
+    }
+    opn_list_clean
+}
+```
+
+
+
+
+# Normalize
+
+
+
+```{r warning=FALSE, message=FALSE}
+for (i in seq_along(opn_list_clean)) {
+    opn_list_clean[[i]] <- NormalizeData(object = opn_list_clean[[i]],assay = "RNA")
+}
+```
+
+
+
+# Variable Features
+
+```{r warning=FALSE, message=FALSE}
+
+n_var_gene <- 4000
+
+for (i in seq_along(opn_list_clean)) {
+    opn_list_clean[[i]] <- FindVariableFeatures(object = opn_list_clean[[i]],
+                                                  selection.method = "vst",     # "mean.var.plot" or "vst"
+                                                  nfeatures = n_var_gene,
+                                                  mean.cutoff = c(0.1,Inf),
+                                                  dispersion.cutoff = c(0.1, Inf))
+}
+    
+```
+
+
+<!-- ```{r} -->
+<!-- i -->
+<!-- names(opn_list_clean)[[i]] -->
+<!-- ``` -->
+
+
+
+
+
+```{r}
+var_features <- SelectIntegrationFeatures(object.list = opn_list_clean, nfeatures = n_var_gene)
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+var_features <- var_features[!is.na(var_features)]
+var_features <- setdiff(var_features, iso_genes_remove)
+var_features <- var_features[1:min(1000, length(var_features))]
+```
+
+
+
+
+
+# Integrate
+
+
+
+```{r}
+opn_seu <- merge(opn_list_clean[[1]],
+		                unlist(opn_list_clean[2:length(opn_list_clean)]),
+		                merge.data = TRUE)
+
+VariableFeatures(opn_seu) <- var_features
+opn_seu
+```
+
+
+
+
+```{r}
+FetchData(object = opn_seu, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+```{r}
+FetchData(object = opn_seu, vars = "batch") %>% dplyr::count(batch) %>% arrange(desc(n))
+```
+
+
+# Run PCA
+
+```{r}
+library(future)
+# plan("multisession", workers = 8)
+options(future.globals.maxSize = 8*1024*1024^2)
+
+DefaultAssay(opn_seu) <- "RNA"
+opn_seu <- ScaleData(object = opn_seu,
+                        assay = "RNA",
+                        vars.to.regress = c("experiment", "sex", "nCount_RNA", "percent_mt", "percent_hsp") #  "orig.ident", 
+                     )
+
+opn_seu <- RunPCA(opn_seu, features = var_features, npcs = 100, approx = FALSE)
+
+plan("sequential")
+invisible(gc())
+```
+
+
+# Run Harmony
+
+```{r}
+opn_seu
+```
+
+
+
+```{r}
+library(harmony)
+opn_seu <- RunHarmony(opn_seu,
+                    group.by.vars = c("experiment"), #, "sex", "nCount_RNA", "orig.ident", "percent_mt", "percent_hsp"),
+					# lambda = c(1,1),
+                    assay.use = "RNA")
+invisible(gc())
+```
+
+
+
+
+
+
+
+
+# Visualize
+
+## Plot PCA
+
+
+
+```{r fig.width=12, fig.height=20, warning=FALSE, message=FALSE}
+library(colorspace)
+library(cowplot)
+p_list <- list()
+for (i in 1:10) {
+    p_list[[i]] <- DimHeatmap(opn_seu,
+                            reduction = "harmony",
+                            dims = i,
+                            cells = 500,
+                            balanced = TRUE,
+                            fast = FALSE) +
+        scale_fill_gradientn(colors = diverging_hcl(10, palette = "Vik"))
+}
+plot_grid(plotlist = p_list, ncol = 2)
+rm(p_list)
+invisible(gc())
+```
+
+
+## Run UMAP
+
+
+
+```{r}
+
+test_pcs <- c(seq(2, 9, 1),seq(10, 18, 2),seq(20, 80, 20))
+
+for (i in seq_along(test_pcs)) {
+    opn_seu <- RunUMAP(opn_seu, 
+		                    reduction = "harmony", 
+		                    dims = 1:test_pcs[[i]],
+		                    n.neighbors = 50,
+		                    n.epochs = 1000,
+		                    min.dist = 0.01,
+		                    spread = 5,
+		                    fast = FALSE,
+		                    verbose = TRUE,
+		                    reduction.name = paste0("umap_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("umap", test_pcs[[i]], "pcs_"))
+}
+
+opn_seu@reductions[["umap"]] <- opn_seu@reductions[["umap_60pcs"]]
+```
+
+
+```{r}
+
+for (i in seq_along(test_pcs)) {
+    opn_seu <- RunTSNE(opn_seu,
+		                    reduction = "harmony",
+		                    num_threads = 24,
+		                    verbose = F,
+		                    dims = 1:test_pcs[[i]],
+		                    do.fast = FALSE,
+		                    check_duplicates = F,
+		                    max_iter = 10000,
+		                    theta = 0.05,
+		                    reduction.name = paste0("tsne_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("tsne", test_pcs[[i]], "pcs_"))
+}
+
+opn_seu@reductions[["tsne"]] <- opn_seu@reductions[["tsne_60pcs"]]
+
+```
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = opn_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+DimPlot(object = opn_seu, reduction = paste0("umap_40pcs"), group.by = "experiment") + coord_fixed() + ggtitle("ALad1 hemilineage")
+```
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = opn_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = opn_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=20, fig.height=20}
+col_list <- scales::hue_pal()(length(unique(opn_seu$experiment)))
+test_pc <- 60
+p <- list()
+for (i in 1:length(unique(opn_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = opn_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(opn_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(opn_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(opn_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+col_list <- scales::hue_pal()(length(unique(opn_seu$experiment)))
+test_pc <- 60
+p <- list()
+for (i in 1:length(unique(opn_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = opn_seu,
+                    reduction = paste0("tsne_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(opn_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(opn_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(opn_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+```{r}
+FetchData(object = opn_seu, vars = "experiment") %>% 
+    dplyr::count(experiment)
+```
+
+
+
+
+
+
+
+# Clustering
+
+```{r}
+opn_seu <- FindNeighbors(opn_seu,
+                       reduction = "harmony",
+                       dims = 1:6,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+# in_conda <- R.home() %>% str_detect("R4_cbrg")
+# if (in_conda) {
+#     algorithm_use <- 4
+# } else {
+    algorithm_use <- 1
+# }
+
+opn_seu <- FindClusters(opn_seu,
+                        algorithm = algorithm_use,
+                        resolution = c(1,2,3,4,10),
+                        verbose = TRUE)
+```
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(opn_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = opn_seu, group.by = res[[i]],
+                           reduction = "umap_6pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(opn_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = opn_seu, group.by = res[[i]],
+                           reduction = "umap_6pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+```{r}
+opn_seu_lineage_pn_metadata <- FetchData(object = opn_seu, vars = c("experiment", "technology", "RNA_snn_res.10", "lineage", "PN_type")) %>% 
+    rownames_to_column("cell_id")
+opn_seu_lineage_pn_metadata
+```
+
+```{r}
+cluster_level_ann <- opn_seu_lineage_pn_metadata %>% 
+    select(RNA_snn_res.10, PN_type) %>% 
+    group_by(RNA_snn_res.10) %>%
+    table() %>%
+    as.data.frame() %>%
+    group_by(RNA_snn_res.10) %>%
+    arrange(RNA_snn_res.10, desc(Freq)) %>%
+    mutate(Perc = 100 * Freq / sum(Freq)) %>%
+    dplyr::slice(1)
+head(cluster_level_ann)
+```
+
+
+```{r}
+cluster_level_ann
+```
+
+
+```{r}
+opn_seu_lineage_pn_metadata_extrapolated <- opn_seu_lineage_pn_metadata %>%
+    select(cell_id, RNA_snn_res.10) %>% 
+    left_join(select(cluster_level_ann, RNA_snn_res.10, PN_type), by = "RNA_snn_res.10")
+opn_seu_lineage_pn_metadata_extrapolated
+```
+
+
+
+
+```{r}
+opn_seu <- AddMetaData(object = opn_seu, metadata = opn_seu_lineage_pn_metadata_extrapolated$PN_type, col.name = "PN_type")
+```
+
+
+```{r fig.height=12, fig.width=20}
+
+DimPlot(object = opn_seu, 
+		group.by = "PN_type",
+		split.by = "technology",
+		pt.size = 1,
+        reduction = "umap_80pcs", 
+        label = TRUE, 
+        label.box = FALSE, 
+		raster = FALSE) + 
+    coord_fixed()
+
+```
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

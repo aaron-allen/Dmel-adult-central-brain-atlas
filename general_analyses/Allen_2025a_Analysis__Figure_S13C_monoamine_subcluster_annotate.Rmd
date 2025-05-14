@@ -1,0 +1,463 @@
+---
+title: "Allen_2025a_Analysis__Figure_S13C_monoamine_subcluster_annotate"
+description:
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+```
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c('png', 'cairo_pdf'),
+                      fig.align = 'center',
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+## Start time
+
+```{r start_time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+```{r}
+library(tidyverse)
+library(Seurat)
+library(colorspace)
+library(cowplot)
+library(scCustomize)
+library(grid)
+```
+
+
+
+# Load data
+
+
+
+```{r}
+path_mod <- ""
+curr_machine <- Sys.info()["nodename"]
+if ( curr_machine == "mentok" ) {
+    path_mod <- "/mnt/data2/scRNAseq/cbrg"
+}
+```
+
+
+
+```{r}
+monoamine_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_monoamine_NEW_pub_seu.rds")
+monoamine_seu
+```
+
+
+```{r}
+monoamine_seu$experiment %>% unique()
+```
+
+
+
+
+```{r}
+FetchData(object = monoamine_seu, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+```{r fig.width=14}
+FetchData(object = monoamine_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment,RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill")
+```
+
+
+
+
+
+
+
+```{r fig.width=10, fig.height=10}
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.4",
+        pt.size = 1,
+       reduction = "umap_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.4",
+        pt.size = 1,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+
+```
+
+
+
+```{r fig.width=10, fig.height=10}
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.10",
+        pt.size = 1,
+       reduction = "umap_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = TRUE) + 
+    NoLegend() + 
+    coord_fixed()
+
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.10",
+        pt.size = 1,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = TRUE) + 
+    NoLegend() + 
+    coord_fixed()
+
+```
+
+
+```{r fig.width=6, fig.height=6}
+col_list <- scales::hue_pal()(length(unique(monoamine_seu$experiment)))
+test_pc <- 40
+p <- list()
+for (i in 1:length(unique(monoamine_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = monoamine_seu,
+                    reduction = paste0("tsne_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(monoamine_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(monoamine_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(monoamine_seu@meta.data[["experiment"]])[i])
+}
+# plot_grid(plotlist = p, ncol = 3)
+for (i in seq_along(p)) {
+    plot(p[[i]])
+}
+```
+
+
+
+# Feature Plots
+
+
+```{r fig.width=6, fig.height=6}
+genes <- c("SerT")
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.10",
+        pt.size = 0.2,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+FeaturePlot(object = monoamine_seu, 
+           features = genes,
+           ncol = 1,
+           pt.size = 0.1, 
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_40pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE) + 
+    NoLegend()
+```
+23,55,32,12,54,56,48,53,49,7,39
+37-mix
+
+
+
+```{r fig.width=6, fig.height=6}
+genes <- c("Tbh")
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.4",
+        pt.size = 0.2,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+FeaturePlot(object = monoamine_seu, 
+           features = genes,
+           ncol = 1,
+           pt.size = 0.1, 
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_40pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE) + 
+    NoLegend()
+```
+21,2,38,16,5
+
+
+```{r fig.width=6, fig.height=6}
+genes <- c("Tdc2")
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.4",
+        pt.size = 0.2,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+FeaturePlot(object = monoamine_seu, 
+           features = genes,
+           ncol = 1,
+           pt.size = 0.1, 
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_40pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE) + 
+    NoLegend()
+```
+7,9,36,3
+
+
+```{r fig.width=14, fig.height=14}
+genes <- c("Hdc")
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.4",
+        pt.size = 1,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+FeaturePlot(object = monoamine_seu, 
+           features = genes,
+           ncol = 1,
+           pt.size = 0.4, 
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_40pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE) + 
+    NoLegend()
+```
+
+```{r fig.width=6, fig.height=6}
+genes <- c("DAT")
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.4",
+        pt.size = 0.2,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+FeaturePlot(object = monoamine_seu, 
+           features = genes,
+           ncol = 1,
+           pt.size = 0.1, 
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_40pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE) + 
+    NoLegend()
+```
+29,33,35,39,42,11,32,27,26
+
+
+
+
+```{r fig.width=6, fig.height=6}
+genes <- c("DAT")
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.10",
+        pt.size = 0.2,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+FeaturePlot(object = monoamine_seu, 
+           features = genes,
+           ncol = 1,
+           pt.size = 0.1, 
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_40pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE) + 
+    NoLegend()
+```
+27,33,28,52,29,34,39,47,51,30
+
+
+
+```{r fig.width=6, fig.height=6}
+genes <- c("Fer2")
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.4",
+        pt.size = 0.2,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+FeaturePlot(object = monoamine_seu, 
+           features = genes,
+           ncol = 1,
+           pt.size = 0.1, 
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_40pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE) + 
+    NoLegend()
+```
+
+
+
+
+```{r fig.width=14, fig.height=14}
+genes <- c("Imp")
+DimPlot(object = monoamine_seu, 
+        group.by = "RNA_snn_res.4",
+        pt.size = 1,
+       reduction = "tsne_40pcs", 
+       label = TRUE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+FeaturePlot(object = monoamine_seu, 
+           features = genes,
+           ncol = 1,
+           pt.size = 1, 
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_40pcs", 
+           raster = FALSE, 
+           order = TRUE,
+           coord.fixed = TRUE) + 
+    NoLegend()
+```
+
+10,0,8,4,1,14,20,25,19,6,12,24,17
+
+43,37,23,28,30,
+
+
+
+
+
+
+
+37-mix Ser and Dop
+16-Tbh but no Tdc2
+
+
+
+
+```{r}
+cell_type_broad_metadata <- FetchData(object = monoamine_seu, vars = c("RNA_snn_res.4", "RNA_snn_res.10")) %>% 
+    rownames_to_column("cell_id") %>% 
+    mutate(cell_type_broad = "unknown") %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.10 %in% c(23,55,32,12,54,56,48,53,49,7,39), "Ser", cell_type_broad)) %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.4 %in% c(21,2,38,5), "Oct", cell_type_broad)) %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.4 %in% c(7,9,36,3), "Tyr", cell_type_broad)) %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.10 %in% c(27,33,28,52,29,34,39,47,51,30), "Dop", cell_type_broad)) %>%
+    mutate(cell_type_broad = if_else(RNA_snn_res.4 %in% c(10,0,8,4,1,14,20,25,19,6,12,24,17), "PAM", cell_type_broad)) %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.4 %in% c(34), "His", cell_type_broad)) %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.10 %in% c(37), "mix", cell_type_broad)) %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.4 %in% c(43,37,23,28,30), "low_quality", cell_type_broad)) %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.4 %in% c(16), "Vmat_VAChT_Tbh_no_Tdc2", cell_type_broad)) %>% 
+    mutate(cell_type_broad = if_else(RNA_snn_res.4 %in% c(18), "Cholinergic_contamination", cell_type_broad))
+cell_type_broad_metadata
+```
+
+
+```{r}
+monoamine_seu <- AddMetaData(object = monoamine_seu, metadata = cell_type_broad_metadata$cell_type_broad , col.name = "cell_type_broad")
+```
+
+
+```{r fig.width=18, fig.height=18}
+DimPlot(object = monoamine_seu, 
+        group.by = "cell_type_broad",
+        pt.size = 1,
+       reduction = "tsne_40pcs", 
+       label = FALSE, 
+       label.box = FALSE,
+       repel = FALSE) + 
+    # NoLegend() + 
+    coord_fixed()
+```
+
+
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
+
+
+
+

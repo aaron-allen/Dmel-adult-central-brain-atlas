@@ -1,0 +1,2180 @@
+---
+title: "Allen_2025b_Analysis__Figure_5F_approximating_dsx_fru_lineages"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+```
+
+
+
+## Load Data
+
+
+```{r}
+meta_noKC_dev <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_noKC_v2--1000VarGene--NoReg--Harmony_ori_exp_cell_devage--_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+DefaultAssay(meta_noKC_dev) <- "RNA"
+Idents(meta_noKC_dev) <- "RNA_snn_res.30"
+meta_noKC_dev
+```
+
+
+
+```{r}
+cluster_markers_metacb_subcluster_clusters <- read_csv("../../proj136/analyses/markers/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_subcluster_clusters_RNA_cluster_markers_doublets_removed.csv")
+cluster_markers_metacb_subcluster_clusters
+```
+
+
+
+
+
+
+
+
+
+
+# new meta, noKC, devage
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=24, fig.height=24}
+
+
+p1 <- DimPlot(object = meta_noKC_dev,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.6",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+p1 <- DimPlot(object = meta_noKC_dev,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.8",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+p2 <- DimPlot(object = meta_noKC_dev,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.15",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p2)
+
+p2 <- DimPlot(object = meta_noKC_dev,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.30",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p2)
+
+
+
+p2 <- DimPlot(object = meta_noKC_dev,
+        reduction = "tsne_240pcs",
+        group.by = "RNA_snn_res.50",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p2[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p2)
+
+
+
+```
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("Imp", "dati", "br", "pdm3", "Eip93F")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.6,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+## LHl2dorsal (aDN)
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "inv", "en", "vg", "Six4", "Rfx", "scro")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+@res10 - 
+@res20 - 
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.6 %in% c(79)) %>%
+    filter(RNA_snn_res.8 %in% c(76)) %>%
+    filter(RNA_snn_res.15 %in% c(51)) %>%
+    filter(RNA_snn_res.30 %in% c(13)) %>%
+    # filter(RNA_snn_res.50 %in% c()) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 149
+654/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.6 %in% c(79)) %>%
+    filter(RNA_snn_res.8 %in% c(76)) %>%
+    filter(RNA_snn_res.15 %in% c(51)) %>%
+    filter(RNA_snn_res.30 %in% c(13)) %>%
+    # filter(RNA_snn_res.50 %in% c()) %>%
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(object = meta_noKC_dev,
+			  cells.highlight = cells_highlight,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+	    split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.6, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_160pcs",
+        pt.size = 0.6,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1$layers[[1]]$aes_params$alpha = 0.4
+p1$layers[[1]]$aes_params$size = 4
+plot(p1 +
+    xlim(-50, -10) +
+    ylim(-100, -60)
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## DL2 ventral (pC2l)
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "TfAP-2", "odd", "drm", "dac", "hbn")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("drm")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+@6 - 40,(162)
+@8 - 58,(156)
+@15 - 32,(178)
+@30 - 95,124,(286,317)
+@50 - 77,178,325,569,(315,357)
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.8 %in% c(156)) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.30 %in% c(124)) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    # filter(dev_age == "late-born") %>% 
+    filter(RNA_snn_res.6 %in% c(162)) %>%
+    # filter(RNA_snn_res.8 %in% c()) %>%
+    # filter(RNA_snn_res.15 %in% c()) %>%
+    # filter(RNA_snn_res.30 %in% c() %>%
+    # filter(RNA_snn_res.50 %in% c()) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    # filter(dev_age == "late-born") %>% 
+    filter(RNA_snn_res.6 %in% c(40)) %>%
+    filter(RNA_snn_res.8 %in% c(58)) %>%
+    filter(RNA_snn_res.15 %in% c(32)) %>%
+    filter(RNA_snn_res.30 %in% c(95,124)) %>%
+    filter(RNA_snn_res.50 %in% c(77,178,325,569)) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 47
+470/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.6 %in% c(40)) %>%
+    filter(RNA_snn_res.8 %in% c(58)) %>%
+    filter(RNA_snn_res.15 %in% c(32)) %>%
+    filter(RNA_snn_res.30 %in% c(95,124)) %>%
+    filter(RNA_snn_res.50 %in% c(77,178,325,569)) %>%
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.4, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        # split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.4, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.6, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_160pcs",
+        pt.size = 0.6,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1$layers[[1]]$aes_params$alpha = 0.4
+p1$layers[[1]]$aes_params$size = 4
+plot(p1 +
+    xlim(-80, -40) +
+    ylim(-90, -50)
+)
+```
+
+
+
+
+
+
+
+## DM4 dorsal (pC1)
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "Fer2", "Optix", "D", "salr", "salm", "Hr51", "otp")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("Fer2", "Optix", "D", "Rx", "Vsx1", "Vsx2")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.6 %in% c(10,84)) %>%
+    filter(RNA_snn_res.8 %in% c(6,101)) %>%
+    filter(RNA_snn_res.15 %in% c(1,74)) %>%
+    filter(RNA_snn_res.30 %in% c(7,29,370)) %>%
+    filter(RNA_snn_res.50 %in% c(14,63,198,301)) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 202
+829/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.6 %in% c(10,84)) %>%
+    filter(RNA_snn_res.8 %in% c(6,101)) %>%
+    filter(RNA_snn_res.15 %in% c(1,74)) %>%
+    filter(RNA_snn_res.30 %in% c(7,29,370)) %>%
+    filter(RNA_snn_res.50 %in% c(14,63,198,301)) %>%
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(object = meta_noKC_dev,
+			  cells.highlight = cells_highlight,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+	    split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.6, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_160pcs",
+        pt.size = 0.6,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1$layers[[1]]$aes_params$alpha = 0.3
+p1$layers[[1]]$aes_params$size = 4
+plot(p1 +
+    xlim(-120, -60) +
+    ylim(-90, -30)
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "Vsx1", "Vsx2")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("Imp", "dati", "br", "pdm3", "Eip93F")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("Hr38", "kay")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+## SMPpv2 ventral (pC2m)
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("acj6", "kn", "tup", "mab-21", "CG4766", "Hmx")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "sv", "tup", "Drgx", "Sox102F")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex")) %>% 
+    rownames_to_column("cell_id") %>% 
+    filter(sex == "female") %>% 
+    # filter(RNA_snn_res.6 %in% c(59)) %>%
+    filter(RNA_snn_res.8 %in% c(100)) %>%
+    filter(RNA_snn_res.15 %in% c(219,153,167)) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 61 cells
+320/4.2
+```
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50")) %>% 
+    # filter(RNA_snn_res.6 %in% c(59)) %>%
+    filter(RNA_snn_res.8 %in% c(100)) %>%
+    filter(RNA_snn_res.15 %in% c(219,153,167)) %>%
+    rownames()
+length(cells_highlight)
+```
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(object = meta_noKC_dev,
+			  cells.highlight = cells_highlight,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+	    split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.6, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_320pcs",
+        pt.size = 0.6,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1$layers[[1]]$aes_params$alpha = 0.4
+p1$layers[[1]]$aes_params$size = 4
+plot(p1 +
+    xlim(-40, 10) +
+    ylim(-95, -45)
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## SMPpv1 (pCd-1)
+
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("unc-4", "Lim1", "mab-21", "foxo", "vvl", "B-H1", "B-H2", "CG4766", "zfh2")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("unc-4", "B-H1")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "unc-4", "foxo")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r}
+SMPpv1_region_cells <- read_csv(file = "../../proj136/analyses/cell_lists/SMPpv1_NEW_region_cells.csv")
+SMPpv1_region_cells
+```
+
+
+@res10 - 
+@res20 - 
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.50 %in% c(98,222,639)) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+516/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    # filter(cell_id %in% SMPpv1_region_cells$cell_id) %>% 
+    # filter(RNA_snn_res.15 %in% c(37)) %>%
+    filter(RNA_snn_res.50 %in% c(98,222,639)) %>%
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(object = meta_noKC_dev,
+			  cells.highlight = cells_highlight,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+	    split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.6, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_160pcs",
+        pt.size = 0.6,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1$layers[[1]]$aes_params$alpha = 0.4
+p1$layers[[1]]$aes_params$size = 4
+plot(p1 +
+    xlim(40, 80) +
+    ylim(65, 105)
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+## DM2 central (pCd-2)
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "bsh", "SoxN", "Gad1")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+@res10 - 
+@res20 - 
+
+
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    # filter(dev_age == "late-born") %>% 
+    filter(RNA_snn_res.8 %in% c(62)) %>%
+    filter(RNA_snn_res.15 %in% c(36)) %>%
+    filter(RNA_snn_res.30 %in% c(109,194,362)) %>%
+    filter(RNA_snn_res.50 %in% c(51,142,413)) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 119
+730/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.8 %in% c(62)) %>%
+    filter(RNA_snn_res.15 %in% c(36)) %>%
+    filter(RNA_snn_res.30 %in% c(109,194,362)) %>%
+    filter(RNA_snn_res.50 %in% c(51,142,413)) %>%
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.4, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+        ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.6, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_160pcs",
+        pt.size = 0.6,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1$layers[[1]]$aes_params$alpha = 0.4
+p1$layers[[1]]$aes_params$size = 4
+plot(p1 +
+    xlim(-145, -105) +
+    ylim(60, 100)
+)
+```
+
+
+
+
+
+
+
+
+
+# other cell types
+
+
+## SMPad1
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("fru", "Ptx1", "Fer1", "VGlut")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.6 %in% c(23)) %>%
+    filter(RNA_snn_res.8 %in% c(15)) %>%
+    filter(RNA_snn_res.15 %in% c(7,241)) %>%
+    filter(RNA_snn_res.30 %in% c(74,97,197)) %>%
+    filter(RNA_snn_res.50 %in% c(30,292,349,350,352,685)) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 160
+741/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.6 %in% c(23)) %>%
+    filter(RNA_snn_res.8 %in% c(15)) %>%
+    filter(RNA_snn_res.15 %in% c(7,241)) %>%
+    filter(RNA_snn_res.30 %in% c(74,97,197)) %>%
+    filter(RNA_snn_res.50 %in% c(30,292,349,350,352,685)) %>%
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.4, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+        ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+i <- 4
+
+plist[[i]]$layers[[1]]$aes_params$size = .6
+plot(plist[[i]])
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+plist[[i]]$layers[[1]]$aes_params$alpha = 0.4
+plist[[i]]$layers[[1]]$aes_params$size = 4
+plot(plist[[i]] +
+    xlim(65, 105) +
+    ylim(60, 100)
+)
+```
+
+
+
+
+
+
+
+## FLAa3
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("fru", "Ptx1", "dve", "fkh", "VAChT")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.6 %in% c(70)) %>%
+    filter(RNA_snn_res.8 %in% c(54,188)) %>%
+    filter(RNA_snn_res.15 %in% c(64,242)) %>%
+    filter(RNA_snn_res.30 %in% c(76,282)) %>%     # ,385
+    filter(RNA_snn_res.50 %in% c(49,298,614)) %>% # ,452,638
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 106
+529/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.6 %in% c(70)) %>%
+    filter(RNA_snn_res.8 %in% c(54,188)) %>%
+    filter(RNA_snn_res.15 %in% c(64,242)) %>%
+    filter(RNA_snn_res.30 %in% c(76,282)) %>%     # ,385
+    filter(RNA_snn_res.50 %in% c(49,298,614)) %>% # ,452,638
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.4, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+        ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("Ms", "Hug")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 4,
+		   max.cutoff = 8,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+i <- 3
+
+plist[[i]]$layers[[1]]$aes_params$size = .6
+plot(plist[[i]])
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+plist[[i]]$layers[[1]]$aes_params$alpha = 0.4
+plist[[i]]$layers[[1]]$aes_params$size = 4
+plot(plist[[i]] +
+    xlim(35, 75) +
+    ylim(-105, -65)
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+## CREa1ventral
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("fru", "TfAP-2", "caup", "dsf", "Gad1", "Vmat")
+plist <- FeaturePlot(object = meta_noKC_dev,
+           reduction = "tsne_240pcs",
+           features = genes,
+           combine = FALSE,
+           pt.size = 0.8,
+		   min.cutoff = 0,
+		   max.cutoff = 2,
+		   # slot = "counts",
+           cols = c("lightsteelblue2", "black"),
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+```{r}
+FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.6 %in% c(83)) %>%
+    filter(RNA_snn_res.8 %in% c(82)) %>%
+    filter(RNA_snn_res.15 %in% c(59)) %>%
+    filter(RNA_snn_res.30 %in% c(66,233)) %>% 
+    filter(RNA_snn_res.50 %in% c(163,209,482)) %>% 
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 97
+340/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_noKC_dev, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.6 %in% c(83)) %>%
+    filter(RNA_snn_res.8 %in% c(82)) %>%
+    filter(RNA_snn_res.15 %in% c(59)) %>%
+    filter(RNA_snn_res.30 %in% c(66,233)) %>% 
+    filter(RNA_snn_res.50 %in% c(163,209,482)) %>% 
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.4, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+        split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+        ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+plot(p1)
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+reductions_to_plot <- meta_noKC_dev@reductions %>% names() %>% str_subset("tsne_") %>% str_subset(pattern = "[0-9][0-9][0-9]") %>% sort()
+
+plist <- list()
+for (i in seq_along(reductions_to_plot)) {
+
+    plist[[i]] <- DimPlot(
+            object = meta_noKC_dev,
+            reduction = reductions_to_plot[[i]],
+            cells.highlight = cells_highlight,
+            sizes.highlight = 0.6, 
+            cols.highlight = "black", 
+            cols = "lightsteelblue2",
+            pt.size = 0.6,
+            raster = FALSE,
+            label = FALSE,
+            label.box = FALSE,
+            repel = TRUE
+        ) +
+        # NoAxes() +
+        NoLegend() +
+        coord_fixed()
+    
+}
+
+
+
+for (i in seq_along(reductions_to_plot)) {
+    
+    plist[[i]]$layers[[1]]$aes_params$alpha = .1
+    plot(plist[[i]])
+
+}
+
+
+```
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1 <- DimPlot(
+        object = meta_noKC_dev,
+        cells.highlight = cells_highlight,
+        sizes.highlight = 0.6, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_160pcs",
+        pt.size = 0.6,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+p1$layers[[1]]$aes_params$alpha = 0.4
+p1$layers[[1]]$aes_params$size = 4
+plot(p1 +
+    xlim(-140, -100) +
+    ylim(30, 70)
+)
+```
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

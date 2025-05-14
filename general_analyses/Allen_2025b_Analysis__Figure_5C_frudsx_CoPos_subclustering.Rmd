@@ -1,0 +1,1304 @@
+---
+title: "Allen_2025b_Analysis__Figure_5C_frudsx_CoPos_subclustering"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load Data
+
+
+
+```{r}
+frudsx_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_frudsx__seu--round2--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+frudsx_seu
+```
+
+
+
+
+# Annotate Lineage
+
+
+
+```{r fig.width=12, fig.height=12}
+
+my_reductions <- names(frudsx_seu@reductions) %>% str_subset("umap") %>% str_subset("pcs")
+
+for (i in seq_along(my_reductions)) {
+    plot(DimPlot(
+            object = frudsx_seu, 
+    		group.by = "RNA_snn_res.4",
+    		pt.size = 0.8,
+            reduction = my_reductions[[i]], 
+            label = TRUE, 
+            label.box = FALSE
+		) + 
+        scale_colour_discrete_qualitative(palette = "Set 2") +
+        NoLegend() +
+        coord_fixed()
+    )
+}
+
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+my_reductions <- names(frudsx_seu@reductions) %>% str_subset("tsne") %>% str_subset("pcs")
+
+for (i in seq_along(my_reductions)) {
+    plot(DimPlot(
+            object = frudsx_seu, 
+    		group.by = "RNA_snn_res.4",
+    		pt.size = 0.8,
+            reduction = my_reductions[[i]], 
+            label = TRUE, 
+            label.box = FALSE
+		) + 
+        scale_colour_discrete_qualitative(palette = "Set 2") +
+        NoLegend() +
+        coord_fixed()
+    )
+}
+
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+my_resolutions <- names(frudsx_seu@meta.data) %>% str_subset("RNA_snn_res")
+
+for (i in seq_along(my_resolutions)) {
+    plot(DimPlot(
+            object = frudsx_seu, 
+    		group.by = my_resolutions[[i]],
+    		pt.size = 0.8,
+            reduction = "tsne_60pcs", 
+            label = TRUE, 
+            label.box = FALSE
+		) + 
+        scale_colour_discrete_qualitative(palette = "Set 2") +
+        NoLegend() +
+        coord_fixed()
+    )
+}
+
+```
+
+
+
+
+
+## Final Annotation
+
+```{r}
+lineage_metadata <- FetchData(object = frudsx_seu, vars = c("experiment", "RNA_snn_res.2")) %>% 
+    dplyr::mutate(hemilineage = "unknown") %>% 
+    dplyr::mutate(hemilineage = if_else(RNA_snn_res.2 %in% c(60), "LHl2", hemilineage)) %>% 
+    dplyr::mutate(hemilineage = if_else(RNA_snn_res.2 %in% c(2,11,45), "DL2_ventral", hemilineage)) %>% 
+    dplyr::mutate(hemilineage = if_else(RNA_snn_res.2 %in% c(6,9,26), "DM4_dorsal", hemilineage)) %>% 
+    dplyr::mutate(hemilineage = if_else(RNA_snn_res.2 %in% c(30,35), "SMPpv2_ventral", hemilineage)) %>% 
+    dplyr::mutate(hemilineage = if_else(RNA_snn_res.2 %in% c(1,68), "SMPpv1", hemilineage)) %>% 
+    dplyr::mutate(hemilineage = if_else(RNA_snn_res.2 %in% c(38), "DM2_central", hemilineage))
+lineage_metadata
+```
+
+```{r}
+frudsx_seu <- AddMetaData(object = frudsx_seu, metadata = lineage_metadata$hemilineage, col.name = "hemilineage")
+```
+
+```{r}
+colours_dsx <- c("#E32B1F", "#E96344", "#F4A98E", "#BDAB98", "#00AC99", "#60C1D8", "grey90")
+frudsx_seu$hemilineage <- factor(frudsx_seu$hemilineage, levels = c("LHl2", "SMPpv1", "DM2_central", "DM4_dorsal", "SMPpv2_ventral", "DL2_ventral", "unknown"))
+```
+
+```{r fig.width=12, fig.height=12}
+
+DimPlot(
+        object = frudsx_seu, 
+		group.by = "hemilineage",
+		cols = colours_dsx,
+		pt.size = 1,
+        reduction = "tsne_60pcs", 
+        label = TRUE, 
+        label.box = FALSE
+	) + 
+    NoLegend() +
+    coord_fixed()
+
+```
+
+```{r}
+# write_rds(x = frudsx_seu, file = "../../proj136/analyses/rds_files/subclustering_frudsx__seu--round2--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# frudsx_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_frudsx__seu--round2--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+```
+
+
+
+## DM2 central (pCd-2)
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "bsh", "SoxN", "Gad1")
+FeaturePlot(
+    object = frudsx_seu,
+    reduction = "tsne_60pcs",
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.8,
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"),
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+    )
+
+```
+
+
+## SMPpv1 (pCd-1)
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "unc-4", "foxo")
+FeaturePlot(
+    object = frudsx_seu,
+    reduction = "tsne_60pcs",
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.8,
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"),
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+    )
+
+```
+
+
+
+## SMPpv2 ventral (pC2m)
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "sv", "tup", "Drgx", "Sox102F")
+FeaturePlot(
+    object = frudsx_seu,
+    reduction = "tsne_60pcs",
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.8,
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"),
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+    )
+
+
+```
+
+
+
+## DM4 dorsal (pC1)
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "Fer2", "Optix", "D", "salr", "salm", "Hr51", "otp")
+FeaturePlot(
+    object = frudsx_seu,
+    reduction = "tsne_60pcs",
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.8,
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"),
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+    )
+
+```
+
+
+
+
+
+## DL2 ventral (pC2l)
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "TfAP-2", "odd", "drm", "dac")
+FeaturePlot(
+    object = frudsx_seu,
+    reduction = "tsne_60pcs",
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.8,
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"),
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+    )
+
+```
+
+
+
+
+
+## LHl2 (aDN)
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "inv", "en", "vg", "Six4", "Rfx", "scro", "tey", "VGlut")
+FeaturePlot(
+    object = frudsx_seu,
+    reduction = "tsne_60pcs",
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.8,
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"),
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+    )
+
+```
+
+
+
+
+
+
+
+
+
+# Subset
+
+
+
+```{r fig.height=14, fig.width=14}
+
+genes <- c("dsx", "fru")
+FeaturePlot(
+    object = frudsx_seu,
+    reduction = "tsne_60pcs",
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.8,
+    # min.cutoff = 0,
+    # max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"),
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+    )
+
+```
+
+
+
+```{r}
+frudsxCoPos_cells <- FetchData(object = frudsx_seu, vars = c("hemilineage")) %>% 
+    filter(hemilineage != "unknown") %>% 
+    rownames()
+length(frudsxCoPos_cells)
+```
+
+
+
+
+```{r fig.width=14, fig.height=14}
+
+DimPlot(
+        object = frudsx_seu,
+        cells.highlight = frudsxCoPos_cells,
+        sizes.highlight = 1, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "tsne_60pcs",
+        pt.size = 1,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+
+```
+
+
+
+```{r}
+frudsxCoPos_sub <- subset(x = frudsx_seu, cells = frudsxCoPos_cells)
+frudsxCoPos_sub
+```
+
+```{r}
+frudsxCoPos_list <- SplitObject(object = frudsxCoPos_sub, split.by = "experiment")
+frudsxCoPos_list
+```
+
+
+
+
+
+
+```{r}
+frudsxCoPos_list_clean <- list()
+for (i in seq_along(frudsxCoPos_list)) {
+    counts_to_use <- "RNA"
+    frudsxCoPos_list_clean[[i]] <- CreateSeuratObject(counts = frudsxCoPos_list[[i]]@assays[[counts_to_use]])
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$orig.ident, col.name = "orig.ident")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$experiment, col.name = "experiment")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$tissue, col.name = "tissue")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$cell_nuclei, col.name = "cell_nuclei")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$availability, col.name = "availability")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$sex, col.name = "sex")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$percent_mt, col.name = "percent_mt")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$percent_rRNA, col.name = "percent_rRNA")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$percent_rProt, col.name = "percent_rProt")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$percent_hsp, col.name = "percent_hsp")
+	frudsxCoPos_list_clean[[i]] <- AddMetaData(object = frudsxCoPos_list_clean[[i]], metadata = frudsxCoPos_list[[i]]$hemilineage, col.name = "hemilineage")
+}
+names(frudsxCoPos_list_clean) <- names(frudsxCoPos_list)
+frudsxCoPos_list_clean
+```
+
+
+
+
+
+
+### Remove Low Quality Cells
+
+
+
+```{r}
+
+cells_to_keep_file <- "../../proj136/analyses/cell_lists/subclustering_frudsxCoPos_metablob--round3--500VarGene--NoReg--Harmony_ori_exp_cell--cells_to_keep.csv"
+
+if (file.exists(cells_to_keep_file)) {
+    cells_to_keep <- read_csv(file = cells_to_keep_file)
+    for (i in seq_along(frudsxCoPos_list_clean)) {
+        frudsxCoPos_list_clean[[i]] <-subset(frudsxCoPos_list_clean[[i]], cells = cells_to_keep$cell_id)
+    }
+    frudsxCoPos_list_clean
+}
+```
+
+
+
+
+### Save list
+
+
+```{r}
+write_rds(x = frudsxCoPos_list_clean, file = "../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu_list_clean--round3.rds")
+```
+
+
+
+
+
+# Normalize
+
+
+```{r warning=FALSE, message=FALSE}
+
+n_var_features <- 500
+
+for (i in seq_along(frudsxCoPos_list_clean)) {
+    frudsxCoPos_list_clean[[i]] <- NormalizeData(object = frudsxCoPos_list_clean[[i]],assay = "RNA")
+    frudsxCoPos_list_clean[[i]] <- FindVariableFeatures(object = frudsxCoPos_list_clean[[i]],
+                                                  selection.method = "mean.var.plot",     # "mean.var.plot" or "vst"
+                                                  nfeatures = n_var_features,
+                                                  mean.cutoff = c(0.01,Inf),
+                                                  dispersion.cutoff = c(0.01, Inf))
+}
+```
+
+
+
+
+
+
+# Integrate
+
+```{r}
+var_features <- SelectIntegrationFeatures(object.list = frudsxCoPos_list_clean, nfeatures = n_var_features)
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "fruM", "fruF", "fruCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+var_features <- setdiff(var_features, iso_genes_remove)
+```
+
+
+```{r}
+frudsxCoPos_seu <- merge(frudsxCoPos_list_clean[[1]],
+		                unlist(frudsxCoPos_list_clean[2:length(frudsxCoPos_list_clean)]),
+		                merge.data = TRUE)
+
+VariableFeatures(frudsxCoPos_seu) <- var_features
+frudsxCoPos_seu
+```
+
+
+```{r}
+FetchData(object = frudsxCoPos_seu, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+
+
+
+# Run PCA
+
+```{r}
+library(future)
+# plan("multisession", workers = 8)
+options(future.globals.maxSize = 8*1024*1024^2)
+
+DefaultAssay(frudsxCoPos_seu) <- "RNA"
+frudsxCoPos_seu <- ScaleData(object = frudsxCoPos_seu,
+                        assay = "RNA",
+                        vars.to.regress = NULL #c("experiment") #, "sex", "nCount_RNA", "percent_mt", "percent_hsp")
+                     )
+```
+
+
+```{r}
+plan("multisession", workers = 8)
+frudsxCoPos_seu <- RunPCA(frudsxCoPos_seu, features = var_features, npcs = 100, approx = FALSE)
+
+plan("sequential")
+invisible(gc())
+```
+
+
+# Run Harmony
+
+```{r}
+library(harmony)
+frudsxCoPos_seu <- RunHarmony(frudsxCoPos_seu,
+                    group.by.vars = c("orig.ident", "experiment", "cell_nuclei"),
+					lambda = c(1,1,1),
+                    assay.use = "RNA")
+invisible(gc())
+```
+
+
+
+
+
+
+
+
+# Visualize
+
+## Plot PCA
+
+
+
+
+```{r fig.width=12, fig.height=20, warning=FALSE, message=FALSE}
+library(colorspace)
+library(cowplot)
+p_list <- list()
+for (i in 1:10) {
+    p_list[[i]] <- DimHeatmap(frudsxCoPos_seu,
+                            reduction = "harmony",
+                            dims = i,
+                            cells = 500,
+                            balanced = TRUE,
+                            fast = FALSE) +
+        scale_fill_gradientn(colors = diverging_hcl(10, palette = "Vik"))
+}
+plot_grid(plotlist = p_list, ncol = 2)
+rm(p_list)
+invisible(gc())
+```
+
+
+## Run UMAP
+
+
+
+```{r}
+
+# test_pcs <- 60
+test_pcs <- c(seq(5, 50, 5),seq(60, 100, 10))
+
+for (i in seq_along(test_pcs)) {
+    frudsxCoPos_seu <- RunUMAP(frudsxCoPos_seu, 
+		                    reduction = "harmony", 
+		                    dims = 1:test_pcs[[i]],
+		                    n.neighbors = 50,
+		                    n.epochs = 1000,
+		                    min.dist = 0.01,
+		                    spread = 5,
+		                    fast = FALSE,
+		                    verbose = TRUE,
+		                    reduction.name = paste0("umap_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("umap", test_pcs[[i]], "pcs_"))
+}
+
+frudsxCoPos_seu@reductions[["umap"]] <- frudsxCoPos_seu@reductions[["umap_60pcs"]]
+# write_rds(x = frudsxCoPos_seu, file = "../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+# frudsxCoPos_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+
+```
+
+
+```{r}
+
+for (i in seq_along(test_pcs)) {
+    frudsxCoPos_seu <- RunTSNE(frudsxCoPos_seu,
+		                    reduction = "harmony",
+		                    num_threads = 24,
+		                    verbose = F,
+		                    dims = 1:test_pcs[[i]],
+		                    do.fast = FALSE,
+		                    check_duplicates = F,
+		                    max_iter = 10000,
+		                    theta = 0.05,
+		                    reduction.name = paste0("tsne_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("tsne", test_pcs[[i]], "pcs_"))
+}
+
+frudsxCoPos_seu@reductions[["tsne"]] <- frudsxCoPos_seu@reductions[["tsne_60pcs"]]
+# write_rds(x = frudsxCoPos_seu, file = "../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+# frudsxCoPos_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+
+```
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = frudsxCoPos_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = frudsxCoPos_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "hemilineage") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = frudsxCoPos_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=18, fig.height=18}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = frudsxCoPos_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "hemilineage") + coord_fixed())
+}
+```
+
+
+```{r fig.width=10, fig.height=10}
+col_list <- scales::hue_pal()(length(unique(frudsxCoPos_seu$experiment)))
+test_pc <- 60
+p <- list()
+for (i in 1:length(unique(frudsxCoPos_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = frudsxCoPos_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(frudsxCoPos_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(frudsxCoPos_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(frudsxCoPos_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+col_list <- scales::hue_pal()(length(unique(frudsxCoPos_seu$experiment)))
+test_pc <- 60
+p <- list()
+for (i in 1:length(unique(frudsxCoPos_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = frudsxCoPos_seu,
+                    reduction = paste0("tsne_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(frudsxCoPos_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(frudsxCoPos_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(frudsxCoPos_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+```{r}
+FetchData(object = frudsxCoPos_seu, vars = "experiment") %>% 
+    dplyr::count(experiment)
+```
+
+
+
+
+
+
+```{r fig.width=6, fig.height=6}
+
+genes <- c("Fer2", "TfAP-2", "sv", "unc-4", "bsh", "inv")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "umap_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 0.4, 
+    min.cutoff = 0,
+    max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Clustering
+
+```{r}
+frudsxCoPos_seu <- FindNeighbors(frudsxCoPos_seu,
+                       reduction = "harmony",
+                       dims = 1:60,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+# in_conda <- R.home() %>% str_detect("R4_cbrg")
+# if (in_conda) {
+#     algorithm_use <- 4
+# } else {
+    algorithm_use <- 1
+# }
+
+frudsxCoPos_seu <- FindClusters(frudsxCoPos_seu,
+                        algorithm = algorithm_use,
+                        resolution = c(0.1,0.2,0.5,1,1.5,2,3,4,5,6,8,10),
+                        verbose = TRUE)
+```
+
+
+
+```{r}
+# write_rds(x = frudsxCoPos_seu, file = "../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+# frudsxCoPos_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+```
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(frudsxCoPos_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = frudsxCoPos_seu, group.by = res[[i]],
+                           reduction = "umap_60pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(frudsxCoPos_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = frudsxCoPos_seu, group.by = res[[i]],
+                           reduction = "umap_60pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = frudsxCoPos_seu, 
+		group.by = "RNA_snn_res.4",
+		split.by = "sex",
+        reduction = "umap_60pcs", 
+        label = FALSE, 
+        label.box = TRUE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(frudsxCoPos_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = frudsxCoPos_seu, group.by = res[[i]],
+                           reduction = "tsne_60pcs", 
+                           label = FALSE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(frudsxCoPos_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = frudsxCoPos_seu, group.by = res[[i]],
+                           reduction = "tsne_60pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = frudsxCoPos_seu, 
+		group.by = "RNA_snn_res.4",
+		split.by = "sex",
+		pt.size = 1,
+        reduction = "tsne_60pcs", 
+        label = FALSE, 
+        label.box = TRUE) + 
+    NoLegend() + 
+    coord_fixed()
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+
+my_resolutions <- names(frudsxCoPos_seu@meta.data) %>% str_subset("RNA_snn_res")
+
+for (i in seq_along(my_resolutions)) {
+    plot(DimPlot(
+            object = frudsxCoPos_seu, 
+    		group.by = my_resolutions[[i]],
+    		pt.size = 2,
+            reduction = "tsne_60pcs", 
+            label = TRUE, 
+            label.box = FALSE
+		) + 
+        scale_colour_discrete_qualitative(palette = "Set 2") +
+        NoLegend() +
+        coord_fixed()
+    )
+}
+
+```
+
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("bsh", "SoxN", "Gad1")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    # min.cutoff = 0,
+    # max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("Fer2", "Optix", "salr", "otp")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    # min.cutoff = 0,
+    # max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("TfAP-2", "odd", "drm", "dac", "dsx")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    # min.cutoff = 0,
+    # max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("en", "inv", "tey", "vg", "Six4", "Optix", "VGlut")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    # min.cutoff = 0,
+    # max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("fru")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    min.cutoff = 1,
+    # max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+genes <- c("dsx")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    # min.cutoff = 0,
+    # max.cutoff = 2,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("fru")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    min.cutoff = 0,
+    # max.cutoff = 2,
+    slot = "scale.data",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+genes <- c("dsx")
+plist <- FeaturePlot(
+    object = frudsxCoPos_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    min.cutoff = 0,
+    # max.cutoff = 2,
+    # slot = "scale.data",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r fig.width=10}
+FetchData(object = frudsxCoPos_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment, RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "stack")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = frudsxCoPos_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment,RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = frudsxCoPos_seu, vars = c("experiment", "cell_nuclei", "RNA_snn_res.4")) %>% 
+    dplyr::count(cell_nuclei, RNA_snn_res.4) %>%
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = cell_nuclei)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.5, colour = "white")
+```
+
+
+
+
+```{r}
+FetchData(object = frudsxCoPos_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(RNA_snn_res.4, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+```{r}
+FetchData(object = frudsxCoPos_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(experiment, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+
+
+
+
+
+
+# Save
+
+
+
+```{r}
+write_rds(x = frudsxCoPos_seu, file = "../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+# frudsxCoPos_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_frudsxCoPos__seu--round3--500VarGene--NoReg--Harmony_exp_cell.rds")
+```
+
+
+
+
+
+
+
+
+# Markers
+
+
+```{r}
+Idents(frudsxCoPos_seu) <- "RNA_snn_res.2"
+markers_fru <- FindAllMarkers(object = frudsxCoPos_seu, assay = "RNA", test.use = "wilcox",only.pos = TRUE)
+markers_fru
+```
+
+
+```{r}
+write_csv(x = markers_fru, file = "../../proj136/analyses/markers/subclustering_frudsxCoPos--round3--500VarGene--NoReg--Harmony_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+# markers_fru <- read_csv(file = "../../proj136/analyses/markers/subclustering_frudsxCoPos--round3--500VarGene--NoReg--Harmony_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+markers_fru
+```
+
+
+```{r fig.width=10, fig.height=10}
+markers_fru %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(frudsxCoPos_seu, features = top10$gene) + 
+    scale_fill_continuous_diverging(palette = "Vik", rev = FALSE,
+                                    limits = c(-2,2), oob = scales::squish,
+                                    na.value = "white") +
+    NoLegend()
+```
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

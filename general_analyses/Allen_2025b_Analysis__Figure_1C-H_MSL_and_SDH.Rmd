@@ -1,0 +1,1289 @@
+---
+title: "Allen_2025b_Analysis__Figure_1C-H_MSL_and_SDH.Rmd"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(ggcorrplot)
+library(eulerr)
+library(ggpubr)
+library(corrr)
+library(tidyverse)
+```
+
+
+
+## Load Data
+
+
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+DefaultAssay(meta_cb) <- "RNA"
+meta_cb
+```
+
+
+
+
+
+# SDH feature plots
+
+
+```{r fig.width=10, fig.height=8}
+sdh_genes <- c("Sxl", "ssx", "tra", "tra2", "fru", "dsx", "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3")
+DefaultAssay(meta_cb) <- "RNA"
+for (i in seq_along(sdh_genes)) {
+    p1 <- FeaturePlot(object = meta_cb, 
+                features = sdh_genes[[i]], 
+                ncol = 1, 
+                cols = c("lightsteelblue2", "black"),
+                pt.size = 2, 
+                order = TRUE, 
+                reduction = "tsne_240pcs", 
+                coord.fixed = TRUE, 
+                raster = TRUE,
+                raster.dpi = c(2048,2048))
+    plot(p1)
+}
+```
+
+
+```{r fig.width=8, fig.height=8}
+sdh_genes <- c("Sxl", "ssx", "tra", "tra2", "fru", "dsx", "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3")
+DefaultAssay(meta_cb) <- "RNA"
+for (i in seq_along(sdh_genes)) {
+    p1 <- FeaturePlot(object = meta_cb, 
+                features = sdh_genes[[i]], 
+                cols = c("lightsteelblue2", "black"),
+                pt.size = 0.1, 
+                order = TRUE, 
+                reduction = "tsne_240pcs", 
+                coord.fixed = TRUE,
+                raster = FALSE) +
+    	NoAxes() +
+    	NoLegend()
+    
+    p1[[1]]$layers[[1]]$aes_params$alpha = .1
+    plot(p1)
+}
+```
+
+
+
+
+
+# SDH across clusters
+
+
+
+```{r}
+meta_sexed <- SplitObject(object = meta_cb, split.by = "sex")
+meta_sexed
+```
+
+
+
+```{r fig.width=20, fig.height=4}
+avg_sdh_msl <- AverageExpression(object = meta_cb, 
+                             assays = "RNA", 
+                             slot = "counts",
+                             features = c("Sxl", "ssx", "tra", "tra2", "fru", "dsx",
+                                          "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3"),
+                             group.by = c("sex", "subcluster_clusters")
+                             )
+
+scaled_exp <- avg_sdh_msl$RNA %>% 
+    as.data.frame() %>% 
+    rownames_to_column("gene") %>% 
+    gather("cluster", "expression", -gene) %>% 
+    spread(gene, expression) %>% 
+    column_to_rownames("cluster") %>% 
+    as.matrix() %>% 
+    scale(center = FALSE) %>% 
+    as.data.frame() %>% 
+    rownames_to_column("cluster") %>% 
+    gather("gene", "expression", -cluster) 
+# scaled_exp
+
+scaled_exp %>% 
+    ggplot(aes(x = cluster, y = gene, fill = expression)) +
+        geom_tile() +
+        scale_fill_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "slot = counts")
+```
+
+
+
+
+
+
+```{r fig.width=20, fig.height=4}
+avg_sdh_msl <- AverageExpression(object = meta_cb, 
+                             assays = "RNA", 
+                             slot = "data",
+                             features = c("Sxl", "ssx", "tra", "tra2", "fru", "dsx",
+                                          "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3"),
+                             group.by = c("sex", "subcluster_clusters")
+                             )
+
+scaled_exp <- avg_sdh_msl$RNA %>% 
+    as.data.frame() %>% 
+    rownames_to_column("gene") %>% 
+    gather("cluster", "expression", -gene) %>% 
+    spread(gene, expression) %>% 
+    column_to_rownames("cluster") %>% 
+    as.matrix() %>% 
+    scale(center = FALSE) %>% 
+    as.data.frame() %>% 
+    rownames_to_column("cluster") %>% 
+    gather("gene", "expression", -cluster) 
+# scaled_exp
+
+scaled_exp %>% 
+    ggplot(aes(x = cluster, y = gene, fill = expression)) +
+        geom_tile() +
+        scale_fill_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "slot = data")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# DEG
+
+
+
+```{r}
+options(scipen = 1)
+deg_list <- list()
+
+
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+					  "Yp1", "Yp2", "Yp3", "whe",
+					  "Sxl", "ssx", "tra", "tra2", "fru", "dsx",
+                      "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3"
+)
+
+```
+
+
+
+<!-- ```{r} -->
+<!-- # deg_list[["zinb-edger"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_edger_df_2.csv", col_types = cols()) -->
+<!-- ``` -->
+
+
+## zinb deseq2
+
+
+```{r}
+deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_deseq_df_1.csv", col_types = cols())
+# deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_deseq_df_2.csv", col_types = cols())
+# deg_list
+```
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.01) %>% 
+    filter(abs(log2FoldChange) > 1) %>% 
+    filter(!Gene %in% iso_genes_remove)
+```
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.01) %>% 
+    filter(abs(log2FoldChange) > 1) %>% 
+    filter(!Gene %in% iso_genes_remove) %>% 
+	dplyr::count(Cluster) %>% 
+	arrange(desc(n))
+```
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>% 
+    filter(abs(log2FoldChange) > 0.5) %>% 
+    filter(!Gene %in% iso_genes_remove)
+```
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>% 
+    filter(abs(log2FoldChange) > 0.5) %>% 
+    filter(!Gene %in% iso_genes_remove) %>% 
+	dplyr::count(Cluster) %>% 
+	arrange(desc(n))
+```
+
+
+### Candidate DEG
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>% 
+    filter(abs(log2FoldChange) > 0.5) %>% 
+    filter(!Gene %in% iso_genes_remove) %>% 
+    filter(Gene == "Lgr3")
+```
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>% 
+    filter(abs(log2FoldChange) > 0.5) %>% 
+    filter(!Gene %in% iso_genes_remove) %>% 
+    filter(Gene == "Dh31")
+```
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>% 
+    filter(abs(log2FoldChange) > 0.5) %>% 
+    filter(!Gene %in% iso_genes_remove) %>% 
+    filter(Gene == "Adar")
+```
+
+
+
+
+
+
+# DA vs DE
+
+
+
+```{r}
+meta_cb$experiment %>% unique()
+```
+
+
+```{r}
+FetchData(object = meta_cb, vars = c("experiment", "sex", "subcluster_clusters")) %>% 
+    dplyr::count(sex)
+```
+
+
+```{r}
+FetchData(object = meta_cb, vars = c("experiment", "sex", "subcluster_clusters")) %>% 
+	filter(!experiment %in% c("species", "sleep")) %>% 
+    dplyr::count(sex)
+```
+
+```{r}
+sex_cluster_bias <- FetchData(object = meta_cb, vars = c("experiment", "sex", "subcluster_clusters")) %>% 
+	filter(!experiment %in% c("species", "sleep")) %>% 
+	rownames_to_column("cell_id") %>%
+    group_by(subcluster_clusters) %>% 
+    # summarise(cell_bias = log2(((sum(sex == "female")+0.0001))/(1 * (sum(sex == "male")+0.0001))))
+    summarise(cell_bias = log2(((sum(sex == "female")))/((sum(sex == "male")))))
+sex_cell_bias <- meta_cb@meta.data %>% 
+    dplyr::select(subcluster_clusters, sex) %>% 
+    rownames_to_column("cell_id") %>%
+    left_join(sex_cluster_bias)
+sex_cell_bias
+```
+
+```{r}
+sex_cluster_bias %>% arrange(cell_bias)
+```
+
+
+
+```{r}
+meta_cb <- AddMetaData(object = meta_cb, metadata = sex_cell_bias$cell_bias, col.name = "sex_cell_bias")
+```
+
+
+
+
+```{r fig.width=30, fig.height=30}
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.8,
+        raster = FALSE,
+        label = TRUE,
+        label.box = TRUE,
+        repel = TRUE) +
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+# p1 <- DimPlot(object = meta_cb,
+#         reduction = "tsne_240pcs",
+#         group.by = "subcluster_clusters",
+#         pt.size = 0.4,
+#         raster = FALSE,
+#         label = TRUE,
+#         label.box = FALSE,
+#         repel = TRUE) +
+#     NoAxes() +
+#     NoLegend() +
+#     coord_fixed()
+# 
+# p1[[1]]$layers[[1]]$aes_params$alpha = .1
+# plot(p1)
+
+
+p1 <- FeaturePlot(object = meta_cb,
+           features = "dsx",
+           pt.size = 0.4, 
+		   max.cutoff = 2,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+p1 <- FeaturePlot(object = meta_cb,
+            features = "sex_cell_bias",
+            order = TRUE,
+            min.cutoff = -2,
+            max.cutoff = 2,
+            pt.size = 0.4,
+            reduction = "tsne_240pcs",
+            raster = FALSE) +
+    scale_colour_continuous_diverging(palette = "Berlin", rev = FALSE, mid = 0) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+p1 <- FeaturePlot(object = meta_cb,
+           features = "fru",
+           pt.size = 0.4, 
+		   min.cutoff = 2,
+		   max.cutoff = 3,
+           cols = c("lightsteelblue2", "black"), 
+           reduction = "tsne_240pcs", 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE) +
+    theme(plot.title = element_text(color="black", size=18, face="bold.italic", hjust = 0.5),
+              legend.title=element_blank()
+          ) + 
+    NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+
+
+```
+
+
+
+
+```{r}
+avg_exp <- AverageExpression(object = meta_cb, 
+                             assays = "RNA", 
+                             slot = "counts",
+                             features = c("fru", "dsx"),
+                             group.by = "subcluster_clusters")
+
+scaled_exp <- avg_exp$RNA %>% 
+    as.data.frame() %>% 
+    rownames_to_column("gene") %>% 
+    gather("cluster", "expression", -gene) %>% 
+    spread(gene, expression) %>% 
+    column_to_rownames("cluster") %>% 
+    as.matrix() %>% 
+    scale() %>% 
+    as.data.frame() %>% 
+    rownames_to_column("cluster") %>% 
+    gather("gene", "expression", -cluster) 
+scaled_exp
+```
+
+
+```{r heatmap-frudsx, fig.width=30, fig.height=3}
+out <- scaled_exp %>% 
+    spread(cluster, expression) %>% 
+    column_to_rownames("gene") %>% 
+    pheatmap::pheatmap(.,
+         breaks = seq(-2,2,0.02),
+         color = diverging_hcl(201, "Vik"),
+         border_color = NA,
+         cluster_rows = F,
+         cluster_cols = T,
+         #fontsize = 16,
+         angle_col = 90)
+```
+
+```{r}
+out$tree_col$order
+```
+
+```{r heatmap-tree, fig.width=40, fig.height=6}
+plot(out$tree_col)
+```
+
+```{r}
+out$tree_col$labels[out$tree_col$order]
+```
+
+
+
+```{r}
+scaled_exp %>% 
+    spread(gene, expression)
+```
+
+
+
+
+
+```{r heatmap-da-1, fig.width=30, fig.height=3}
+test <- meta_cb@meta.data %>% 
+	dplyr::select(subcluster_clusters,sex_cell_bias) %>% 
+	unique() %>% 
+	mutate(sex_cell_bias = if_else(sex_cell_bias == -Inf, -max(sex_cell_bias),sex_cell_bias))
+test$subcluster_clusters <- factor(test$subcluster_clusters, levels = as.factor(out$tree_col$labels[out$tree_col$order]))
+test %>% 
+    ggplot(aes(x = subcluster_clusters, y = 0, fill = sex_cell_bias)) +
+        geom_tile() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-1,1), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+
+```
+
+
+```{r heatmap-da-2, fig.width=30, fig.height=3}
+test <- meta_cb@meta.data %>% 
+	dplyr::select(subcluster_clusters,sex_cell_bias) %>% 
+	unique() %>% 
+	mutate(sex_cell_bias = if_else(sex_cell_bias == -Inf, -max(sex_cell_bias),sex_cell_bias))
+test$subcluster_clusters <- factor(test$subcluster_clusters, levels = as.factor(out$tree_col$labels[out$tree_col$order]))
+test %>% 
+    ggplot(aes(x = subcluster_clusters, y = 0, fill = sex_cell_bias)) +
+        geom_tile() +
+        scale_fill_gradientn(colours = c("#00BFC4", "black", "#C77CFF"), limits = c(-4,4), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank())
+
+```
+
+
+
+```{r heatmap-deg-1, fig.width=30, fig.height=3}
+
+test <- deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.01) %>% 
+    filter(abs(log2FoldChange) > 1) %>% 
+    # filter(!Gene %in% iso_genes_remove) %>% 
+	group_by(Cluster) %>% 
+	dplyr::count() %>% 
+    bind_rows(data.frame(Cluster = "Achl_008", n = 0)) %>% 
+	mutate(Cluster = as.factor(Cluster)) 
+test$Cluster <- factor(test$Cluster, levels = as.factor(out$tree_col$labels[out$tree_col$order]))
+test %>% 
+    ggplot(aes(x = Cluster, y = 0, fill = n)) +
+        geom_tile() +
+        scale_fill_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,50), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "padj < 0.01, log2FoldChange > 1\nzinb-deseq")
+
+```
+
+
+
+
+```{r heatmap-deg-2, fig.width=30, fig.height=3}
+
+test <- deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>% 
+    filter(abs(log2FoldChange) > 0.5) %>% 
+    # filter(!Gene %in% iso_genes_remove) %>% 
+	group_by(Cluster) %>% 
+	dplyr::count() %>% 
+    bind_rows(data.frame(Cluster = "Achl_008", n = 0)) %>% 
+	mutate(Cluster = as.factor(Cluster)) 
+test$Cluster <- factor(test$Cluster, levels = as.factor(out$tree_col$labels[out$tree_col$order]))
+test %>% 
+    ggplot(aes(x = Cluster, y = 0, fill = n)) +
+        geom_tile() +
+        scale_fill_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,400), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "padj < 0.05, log2FoldChange > 0.5\nzinb-deseq")
+
+```
+
+
+
+```{r heatmap-deg-3, fig.width=30, fig.height=3}
+
+test <- deg_list[["deseq"]] %>% 
+    filter(p_val_adj < 0.01) %>% 
+    filter(abs(avg_log2FC) > 1) %>% 
+    # filter(!Gene %in% iso_genes_remove) %>% 
+	group_by(Cluster) %>% 
+	dplyr::count() %>% 
+    bind_rows(data.frame(Cluster = "Achl_008", n = 0)) %>% 
+	mutate(Cluster = as.factor(Cluster)) 
+test$Cluster <- factor(test$Cluster, levels = as.factor(out$tree_col$labels[out$tree_col$order]))
+test %>% 
+    ggplot(aes(x = Cluster, y = 0, fill = n)) +
+        geom_tile() +
+        scale_fill_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,50), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "padj < 0.01, log2FoldChange > 1\ndeseq")
+
+```
+
+
+
+
+```{r heatmap-deg-4, fig.width=30, fig.height=3}
+
+test <- deg_list[["deseq"]] %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(abs(avg_log2FC) > 0.5) %>% 
+    # filter(!Gene %in% iso_genes_remove) %>% 
+	group_by(Cluster) %>% 
+	dplyr::count() %>% 
+    bind_rows(data.frame(Cluster = "Achl_008", n = 0)) %>% 
+	mutate(Cluster = as.factor(Cluster)) 
+test$Cluster <- factor(test$Cluster, levels = as.factor(out$tree_col$labels[out$tree_col$order]))
+test %>% 
+    ggplot(aes(x = Cluster, y = 0, fill = n)) +
+        geom_tile() +
+        scale_fill_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,80), oob = scales::squish) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "padj < 0.05, log2FoldChange > 0.5\ndeseq")
+
+```
+
+
+
+
+
+
+
+
+
+
+## All Cluster Volcano
+
+
+
+
+```{r}
+all_degs_collapsed <- deg_list[["zinb-deseq"]] %>%
+    filter(!Gene %in% iso_genes_remove) %>%
+	unite("exclge", Gene, Cluster, sep = " - ")
+all_degs_collapsed
+```
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+fc_cutoff <- 1
+p_cutoff <- 0.01
+
+EnhancedVolcano::EnhancedVolcano(toptable = all_degs_collapsed, 
+              lab = all_degs_collapsed$exclge,
+              # xlim = c(-4, 4),
+              # ylim = c(0, 15),
+              x = "log2FoldChange", 
+              y = "padj",
+              pCutoff = p_cutoff,
+              FCcutoff = fc_cutoff,
+              # col = c("grey80", "grey50", "grey50", "red2"),
+              pointSize = 4,
+              raster = TRUE,
+              boxedLabels = FALSE,
+              drawConnectors = TRUE,
+              # title = plot_title,
+              subtitle = paste0("All Clusters, test = zinb-deseq2"),
+              caption = paste0("FC cutoff = ", fc_cutoff,
+                               "; p-value cutoff = ", p_cutoff),
+              )
+
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+fc_cutoff <- 0.5
+p_cutoff <- 0.05
+
+EnhancedVolcano::EnhancedVolcano(toptable = all_degs_collapsed, 
+              lab = all_degs_collapsed$exclge,
+              # xlim = c(-4, 4),
+              # ylim = c(0, 15),
+              x = "log2FoldChange", 
+              y = "padj",
+              pCutoff = p_cutoff,
+              FCcutoff = fc_cutoff,
+              # col = c("grey80", "grey50", "grey50", "red2"),
+              pointSize = 4,
+              raster = TRUE,
+              boxedLabels = FALSE,
+              drawConnectors = TRUE,
+              # title = plot_title,
+              subtitle = paste0("All Clusters, test = zinb-deseq2"),
+              caption = paste0("FC cutoff = ", fc_cutoff,
+                               "; p-value cutoff = ", p_cutoff),
+              )
+
+
+```
+
+
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 0.05) %>%
+    filter(abs(log2FoldChange) > 1.5) %>% 
+    filter(!Gene %in% iso_genes_remove) %>% 
+	arrange(desc(abs(log2FoldChange)))
+```
+
+
+```{r}
+Idents(meta_cb) <- "subcluster_clusters"
+VlnPlot(object = meta_cb, features = "Gyc32E", idents = "Glut_056", group.by = "experiment", split.by = "sex", slot = "counts", log = TRUE)
+```
+
+
+
+```{r}
+deg_list[["zinb-deseq"]] %>% 
+    filter(padj < 1e-100) %>% 
+    filter(abs(log2FoldChange) < 0.5) %>% 
+    filter(!Gene %in% iso_genes_remove) %>% 
+	arrange(padj)
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+tem_deg <- deg_list[["zinb-deseq"]] %>% 
+	filter(Cluster == "KC_y") %>% 
+	# filter(padj < 0.05) %>% 
+    filter(!Gene %in% iso_genes_remove)
+
+fc_cutoff <- 0.5
+p_cutoff <- 0.05
+
+EnhancedVolcano::EnhancedVolcano(toptable = tem_deg, 
+              lab = tem_deg$Gene,
+              # xlim = c(-8, 8),
+              # ylim = c(0, 10),
+              x = "log2FoldChange", 
+              y = "padj",
+              pCutoff = p_cutoff,
+              FCcutoff = fc_cutoff,
+              # col = c("grey80", "grey50", "grey50", "red2"),
+              pointSize = 2,
+				# labSize = 0,
+              raster = TRUE,
+              boxedLabels = FALSE,
+              drawConnectors = T,
+              # title = plot_title,
+              subtitle = paste0("Cluster = ", "KC_y",
+                                ", test = ", "zinb-deseq"),
+              caption = paste0("FC cutoff = ", fc_cutoff,
+                               "; p-value cutoff = ", p_cutoff),
+              )
+```
+
+
+```{r}
+Idents(meta_cb) <- "subcluster_clusters"
+VlnPlot(object = meta_cb, features = "CG14757", idents = "KC_y", group.by = "experiment", split.by = "sex", slot = "counts", log = TRUE)
+```
+
+```{r}
+Idents(meta_cb) <- "subcluster_clusters"
+VlnPlot(object = meta_cb, features = "Myc", idents = "KC_y", group.by = "experiment", split.by = "sex", slot = "counts", log = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+all_degs_collapsed <- deg_list[["deseq"]] %>%
+    # filter(padj < 0.05) %>%
+    # filter(abs(log2FoldChange) > 0.5) %>%
+    filter(!Gene %in% iso_genes_remove) %>%
+	unite("exclge", Gene, Cluster, sep = " - ")
+all_degs_collapsed
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=12, fig.height=12}
+
+
+fc_cutoff <- 0.5
+p_cutoff <- 0.05
+
+EnhancedVolcano::EnhancedVolcano(toptable = all_degs_collapsed, 
+              lab = all_degs_collapsed$exclge,
+              # xlim = c(-4, 4),
+              # ylim = c(0, 15),
+              x = "avg_log2FC", 
+              y = "p_val_adj",
+              pCutoff = p_cutoff,
+              FCcutoff = fc_cutoff,
+              # col = c("grey80", "grey50", "grey50", "red2"),
+              pointSize = 4,
+              raster = TRUE,
+              boxedLabels = FALSE,
+              drawConnectors = TRUE,
+              # title = plot_title,
+              subtitle = paste0("All Clusters, test = deseq2"),
+              caption = paste0("FC cutoff = ", fc_cutoff,
+                               "; p-value cutoff = ", p_cutoff),
+              )
+
+
+
+```
+
+
+
+```{r fig.width=12, fig.height=12}
+tem_deg <- deg_list[["deseq"]] %>% 
+	filter(Cluster == "GABA_012") %>% 
+	# filter(padj < 0.05) %>% 
+    filter(!Gene %in% iso_genes_remove)
+
+EnhancedVolcano::EnhancedVolcano(toptable = tem_deg, 
+              lab = tem_deg$Gene,
+              xlim = c(-8, 8),
+              ylim = c(0, 10),
+              x = "avg_log2FC", 
+              y = "p_val_adj",
+              pCutoff = 0.05,
+              FCcutoff = 0.5,
+              # col = c("grey80", "grey50", "grey50", "red2"),
+              pointSize = 2,
+				# labSize = 0,
+              raster = TRUE,
+              boxedLabels = FALSE,
+              drawConnectors = T#,
+              # title = plot_title,
+              # subtitle = paste0("Cluster = ", clusters[[i]], 
+              #                   ", test = ", test_used),
+              # caption = paste0("FC cutoff = ", fc_cutoff,
+              #                  "; p-value cutoff = ", p_cutoff),
+              )
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+tem_deg <- deg_list[["deseq"]] %>% 
+	filter(Cluster == "Achl_058") %>% 
+	# filter(padj < 0.05) %>% 
+    filter(!Gene %in% iso_genes_remove)
+
+EnhancedVolcano::EnhancedVolcano(toptable = tem_deg, 
+              lab = tem_deg$Gene,
+              # xlim = c(-8, 8),
+              # ylim = c(0, 10),
+              x = "avg_log2FC", 
+              y = "p_val_adj",
+              pCutoff = 0.05,
+              FCcutoff = 0.5,
+              # col = c("grey80", "grey50", "grey50", "red2"),
+              pointSize = 2,
+				# labSize = 0,
+              raster = TRUE,
+              boxedLabels = FALSE,
+              drawConnectors = T#,
+              # title = plot_title,
+              # subtitle = paste0("Cluster = ", clusters[[i]], 
+              #                   ", test = ", test_used),
+              # caption = paste0("FC cutoff = ", fc_cutoff,
+              #                  "; p-value cutoff = ", p_cutoff),
+              )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# DEG by chromosome
+
+
+```{r}
+r630 <- read_tsv("../../../aallen/genomes/dmel/r6.30/gtf/dmel-all-r6.30.gtf.gz",
+                 col_names = c("sequence","source","feature","start","end","score","strand","phase","attributes")) %>%
+                 separate(attributes,c("gene_id","gene_symbol","transcript_id","transcript_symbol"),sep = ";")
+r630
+```
+
+
+
+
+```{r}
+gene_by_chrom <- r630 %>% 
+    filter(feature == "gene") %>% 
+    select(sequence,gene_id,gene_symbol) %>% 
+    dplyr::mutate(gene_id = str_remove(gene_id,"gene_id ") %>% str_remove_all('"') %>% str_trim(),
+           gene_symbol = str_remove(gene_symbol,"gene_symbol ") %>% str_remove_all('"') %>% str_trim(),
+           )
+gene_by_chrom
+```
+
+
+
+
+
+
+```{r}
+gene_by_chrom %>%
+    filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+    dplyr::count(sequence, name = "n_genes") %>% 
+    summarise(mean_gene = mean(n_genes))
+```
+
+
+```{r}
+deg_list[["deseq"]] %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(abs(avg_log2FC) > 0.5) %>% 
+    mutate(sex_bias = if_else(avg_log2FC < 0, "male", "female")) %>% 
+    select(Gene, sex_bias) %>% 
+    unique() %>% 
+    left_join(gene_by_chrom, by = c("Gene"="gene_symbol")) %>% 
+    filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+    group_by(sequence, sex_bias) %>% 
+    dplyr::count(name = "n_markers") %>% 
+    full_join(gene_by_chrom %>%
+                  filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+                  group_by(sequence) %>% 
+                  dplyr::count(name = "n_genes"),
+              "sequence")  %>% 
+    dplyr::mutate(enrichment = round(3504.6 * n_markers/n_genes, digits = 0))
+```
+
+
+
+```{r fig.width=10, fig.height=4}
+deg_list[["deseq"]] %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(abs(avg_log2FC) > 0.5) %>% 
+    mutate(sex_bias = if_else(avg_log2FC < 0, "male", "female")) %>% 
+    select(Gene, sex_bias) %>% 
+    unique() %>% 
+    left_join(gene_by_chrom, by = c("Gene"="gene_symbol")) %>% 
+    filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+    group_by(sequence, sex_bias) %>% 
+    dplyr::count(name = "n_markers") %>% 
+    full_join(gene_by_chrom %>%
+                  filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+                  group_by(sequence) %>% 
+                  dplyr::count(name = "n_genes"),
+              "sequence")  %>% 
+    # dplyr::mutate(enrichment = round(3504.6 * n_markers/n_genes, digits = 0)) %>% 
+    dplyr::mutate(enrichment = round(1000 * n_markers/n_genes, digits = 0)) %>% 
+    ggplot(aes(x = factor(sequence,levels = c("3R","3L","2R","2L","X")),y = enrichment, group = sex_bias, fill = sex_bias)) +
+            geom_bar(position="dodge", stat="identity") +
+            #geom_hline(yintercept=0, colour="white", size = 1) +
+            # ylim(-x.min.max,x.min.max) +
+            # ggtitle("Under represented     |     Over represented  ") +
+            theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+                  axis.title = element_text(size=14,face="bold"),
+                  axis.text = element_text(size=14),
+                  legend.title = element_blank()) +
+            xlab("Chromosome (arm)") +
+            ylab("Chromosome Enrichment of DEG\n# DEG / 1000 genes") +
+            coord_flip()
+
+```
+
+```{r fig.width=10, fig.height=4}
+deg_list[["deseq"]] %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(abs(avg_log2FC) > 0.5) %>% 
+    select(Gene) %>% 
+    unique() %>% 
+    left_join(gene_by_chrom, by = c("Gene"="gene_symbol")) %>% 
+    filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+    group_by(sequence) %>% 
+    dplyr::count(name = "n_markers") %>% 
+    full_join(gene_by_chrom %>%
+                  filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+                  group_by(sequence) %>% 
+                  dplyr::count(name = "n_genes"),
+              "sequence")  %>% 
+    # dplyr::mutate(enrichment = round(3504.6 * n_markers/n_genes, digits = 0)) %>% 
+    dplyr::mutate(enrichment = round(1000 * n_markers/n_genes, digits = 0)) %>% 
+    ggplot(aes(x = factor(sequence,levels = c("3R","3L","2R","2L","X")),y = enrichment)) +
+            geom_bar(position="dodge", stat="identity") +
+            #geom_hline(yintercept=0, colour="white", size = 1) +
+            # ylim(-x.min.max,x.min.max) +
+            # ggtitle("Under represented     |     Over represented  ") +
+            theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+                  axis.title = element_text(size=14,face="bold"),
+                  axis.text = element_text(size=14),
+                  legend.title = element_blank()) +
+            xlab("Chromosome (arm)") +
+            ylab("Chromosome Enrichment of DEG\n# DEG / 1000 genes") +
+            coord_flip()
+
+```
+
+
+
+
+
+```{r}
+deg_chrom_mat <- deg_list[["deseq"]] %>% 
+    filter(p_val_adj < 0.005) %>% 
+    filter(abs(avg_log2FC) > 0.3) %>% 
+    select(Gene) %>% 
+    unique() %>% 
+    left_join(gene_by_chrom, by = c("Gene"="gene_symbol")) %>% 
+    filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+    dplyr::count(sequence, name = "n_markers") %>% 
+    full_join(gene_by_chrom %>%
+                  filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+                  group_by(sequence) %>% 
+                  dplyr::count(name = "n_genes"),
+              "sequence")  %>% 
+    dplyr::mutate(observed = round(3504.6 * n_markers/n_genes, digits = 0),
+                  expected = round(mean(observed), digits = 0)) %>% 
+    column_to_rownames("sequence") %>%
+    select(-n_genes, -n_markers) %>% 
+    as.matrix()
+deg_chrom_mat
+```
+
+
+```{r}
+fisher.test(deg_chrom_mat, simulate.p.value=TRUE)
+```
+
+
+```{r}
+contingency_table <- deg_list[["deseq"]] %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(abs(avg_log2FC) > 0.5) %>% 
+    mutate(sex_bias = if_else(avg_log2FC < 0, "male", "female")) %>% 
+    select(Gene, sex_bias) %>% 
+    unique() %>% 
+    left_join(gene_by_chrom, by = c("Gene"="gene_symbol")) %>% 
+    filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+    dplyr::count(sequence, sex_bias, name = "n_markers") %>% 
+    spread(sex_bias, n_markers) %>% 
+    column_to_rownames("sequence") %>% 
+    as.matrix()
+contingency_table
+```
+
+
+```{r}
+fisher_result <- fisher.test(contingency_table)
+print(fisher_result)
+```
+
+
+```{r}
+p.adjust(p = c(0.0004998, 0.0005059), method = "bonferroni")
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+df <- deg_list[["deseq"]] %>% 
+    filter(p_val_adj < 0.05) %>% 
+    filter(abs(avg_log2FC) > 0.5) %>% 
+    mutate(sex_bias = if_else(avg_log2FC < 0, "male", "female")) %>% 
+    select(Gene, sex_bias) %>% 
+    unique() %>% 
+    left_join(gene_by_chrom, by = c("Gene"="gene_symbol")) %>% 
+    filter(sequence %in% c("2L","2R","3L","3R","X")) %>%
+    dplyr::count(sequence, sex_bias, name = "n_markers") %>% 
+    spread(sex_bias, n_markers)
+p_values <- numeric(nrow(df))
+
+for (i in 1:nrow(df)) {
+    female_current <- df$female[i]
+    male_current <- df$male[i]
+    chrom_mean <- sum(df$female[i], df$male[i])/2
+    contingency_table <- matrix(c(female_current, male_current, chrom_mean, chrom_mean), nrow = 2)
+    fisher_result <- fisher.test(contingency_table)
+    p_values[i] <- fisher_result$p.value
+}
+
+adjusted_p_values <- p.adjust(p_values, method = "bonferroni")
+results <- data.frame(sequence = df$sequence, p_value = p_values, adjusted_p_value = adjusted_p_values)
+print(results)
+
+```
+
+
+
+
+
+
+# SDH avg log FC
+
+
+
+## zinb-deseq
+
+```{r fig.width=4, fig.height=8}
+dc_genes <- c("Sxl", "ssx", "tra", "tra2", "fru", "dsx", "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3")
+deg_list[["zinb-deseq"]] %>% 
+    filter(Gene %in% dc_genes) %>% 
+    select(Gene, log2FoldChange, Cluster) %>%
+    ggplot(aes(x = Gene, y = log2FoldChange)) +
+        geom_hline(yintercept = 0) +
+        geom_boxplot(outlier.shape = NA) +
+        ylim(-6, 6) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "zinb-deseq")
+```
+
+
+```{r fig.width=4, fig.height=8}
+dc_genes <- c("Sxl", "ssx", "tra", "tra2", "fru", "dsx", "lncRNA:roX1", "lncRNA:roX2", "mle", "mof", "msl-1", "msl-2", "msl-3")
+deg_list[["zinb-deseq"]] %>% 
+    filter(Gene %in% dc_genes) %>% 
+    select(Gene, log2FoldChange, Cluster) %>%
+    ggplot(aes(x = Gene, y = log2FoldChange)) +
+        geom_hline(yintercept = 0) +
+        geom_boxplot(outlier.shape = NA) +
+        ylim(-2, 2) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "zinb-deseq")
+```
+
+
+```{r fig.width=4, fig.height=8}
+fru_genes <- c("fru",  "fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC", "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1", "fruPr1Ex2", "fruCOM")
+deg_list[["zinb-deseq"]] %>% 
+    filter(Gene %in% fru_genes) %>% 
+    select(Gene, log2FoldChange, Cluster) %>%
+    ggplot(aes(x = Gene, y = log2FoldChange)) +
+        geom_hline(yintercept = 0) +
+        geom_boxplot(outlier.shape = 1) +
+        # ylim(-2, 2) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+              axis.title.x = element_blank()) +
+		labs(caption = "zinb-deseq")
+```
+
+
+
+
+#### stats
+
+```{r}
+test_outputs <- list()
+p_values <- numeric(length(dc_genes))
+for (i in seq_along(dc_genes)) {
+    test_outputs[[i]] <- deg_list[["zinb-deseq"]] %>% 
+        filter(Gene %in% dc_genes) %>% 
+        select(Gene, log2FoldChange, Cluster) %>% 
+        filter(Gene == dc_genes[[i]]) %>% 
+        pull(log2FoldChange) %>% 
+        t.test()
+    p_values[i] <- test_outputs[[i]]$p.value
+}
+names(test_outputs) <- dc_genes
+```
+
+
+```{r}
+test_outputs
+```
+
+
+```{r}
+p_values_adj <- p.adjust(p_values, method = "bonferroni")
+names(p_values_adj) <- dc_genes
+p_values_adj
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+

@@ -1,0 +1,961 @@
+---
+title: "Allen_2025b_Analysis__Figure_S5_fru_KC_monoamine"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## DEG prep
+
+
+
+
+```{r}
+options(scipen = 1)
+deg_list <- list()
+deg_list[["zinb-deseq"]] <- read_csv(file = "../../proj136/analyses/deg_sexed/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_bothsexes_DEG_sexed_subcluster_clusters_RNA_zinb_deseq_df_2.csv")#, col_types = cols())
+deg_list[["zinb-deseq"]]
+```
+
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+```
+
+
+
+
+
+### Functions
+
+#### plot_sex_bias_volcanoplots
+
+```{r}
+plot_sex_bias_volcanoplots <- function(
+    clusterOI = NULL,
+    deg_df = NULL,
+    x_lims = NULL,
+    y_lims = NULL,
+    p_cutoff = 0.01,
+    fc_cutoff = 1,
+    is_zinb = TRUE
+){
+    clusterOI_deg_gene_filtered <- deg_df %>% 
+        filter(Cluster == clusterOI) %>% 
+        dplyr::filter(!Gene %in% c("lncRNA:roX1", "lncRNA:roX2")) %>%
+        arrange(desc(abs(log2FoldChange)))
+    # clusterOI_deg_gene_filtered
+    
+    if (is_zinb) {
+        x_data <- "log2FoldChange"
+        y_data <- "padj"
+    } else {
+        x_data <- "avg_log2FC"
+        y_data <- "p_val_adj"
+    }
+    if (is.null(x_lims)) {
+        x_lims <- ceiling(max(-log10(clusterOI_deg_gene_filtered[[x_data]]), na.rm = TRUE))
+    }
+    if (is.null(y_lims)) {
+        y_lims <- ceiling(max(-log10(clusterOI_deg_gene_filtered[[y_data]]), na.rm = TRUE))
+    }
+
+    p1 <- EnhancedVolcano::EnhancedVolcano(
+        toptable = clusterOI_deg_gene_filtered,
+        lab = clusterOI_deg_gene_filtered$Gene,
+        col = c("grey90", "grey80", "grey80", "red"),
+        xlim = c(-x_lims, x_lims),
+        ylim = c(0, y_lims),
+        x = x_data,
+        y = y_data,
+        pCutoff = p_cutoff,
+        FCcutoff = fc_cutoff,
+        pointSize = 2,
+        raster = TRUE,
+        boxedLabels = FALSE,
+        drawConnectors = TRUE,
+        subtitle = paste0("Cluster = ", clusterOI,
+                        ", test = ", "zinb-deseq"),
+        caption = paste0("FC cutoff = ", fc_cutoff,
+                       "; p-value cutoff = ", p_cutoff)
+    )
+    return(p1)
+}
+
+```
+
+
+### Gene Filtering
+
+
+
+#### iso and trans genes
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4"
+)
+```
+
+
+
+#### dataset specific genes
+
+
+##### load pre-calc. counts
+
+```{r}
+all_gene_max_sum__by_exp_together_wPercent <- read_csv(file = "../../proj136/analyses/all_gene_max_sum__by_exp_wPercent.csv")
+head(all_gene_max_sum__by_exp_together_wPercent)
+```
+
+
+```{r}
+all_gene_max_sum <- read_csv(file = "../../proj136/analyses/all_gene_max_sum.csv")
+head(all_gene_max_sum)
+```
+
+
+
+##### filter candidates
+
+```{r}
+genes_adfca_gt_30p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(Dataset == "adfca") %>%
+    dplyr::filter(percent_dataset > 30) %>%
+    pull(RowName)
+length(genes_adfca_gt_30p)
+```
+
+
+```{r}
+genes_any_gt_60p <- all_gene_max_sum__by_exp_together_wPercent %>%
+    dplyr::filter(percent_dataset > 60) %>% 
+    pull(RowName) %>% 
+    unique()
+length(genes_any_gt_60p)
+```
+
+
+```{r}
+genes_low_exp <- all_gene_max_sum %>%
+    dplyr::filter(RowSum < 400) %>% 
+    dplyr::filter(RowMax < 4) %>% 
+    pull(RowName) %>% 
+    unique()
+length(genes_low_exp)
+```
+
+
+```{r}
+genes_remove <- sort(unique(c(genes_adfca_gt_30p, genes_any_gt_60p, genes_low_exp)))
+length(genes_remove)
+```
+
+
+```{r}
+genes_sexed_dataset <- all_gene_max_sum__by_exp_together_wPercent %>% 
+    dplyr::filter(!Dataset %in% c("sleep", "species")) %>%
+    dplyr::group_by(RowName) %>% 
+    dplyr::summarise(sexed_dataset_counts = sum(percent_dataset)) %>% 
+    dplyr::filter(sexed_dataset_counts > 45) %>% 
+    pull(RowName)
+length(genes_sexed_dataset)
+```
+
+
+
+### filter deg list
+
+```{r}
+deg_gene_filtered <- deg_list[["zinb-deseq"]] %>%
+    dplyr::filter(!Gene %in% iso_genes_remove) %>%
+    dplyr::filter(!Gene %in% genes_remove) %>%
+    dplyr::filter(Gene %in% genes_sexed_dataset)
+deg_gene_filtered
+```
+
+
+
+
+
+# KC
+
+```{r}
+KC_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_KC__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+KC_seu
+```
+
+
+
+
+
+
+
+
+```{r}
+KC_seu@meta.data %>% colnames()
+```
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = KC_seu, 
+		group.by = "RNA_snn_res.0.1",
+        reduction = "umap_20pcs", 
+		pt.size = 1,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("mono")
+```
+
+
+```{r}
+cells_remove <- KC_seu@reductions$umap_20pcs@cell.embeddings %>% 
+    as.data.frame() %>% 
+    rownames_to_column("cell_id") %>% 
+    filter(
+        (umap20pcs_1 > -30 & umap20pcs_1 < -10 & umap20pcs_2 > 30 & umap20pcs_2 < 50) |
+        (umap20pcs_1 > 0 & umap20pcs_1 < 15 & umap20pcs_2 > 0 & umap20pcs_2 < 20) 
+    ) %>% 
+    pull("cell_id")
+length(cells_remove)
+```
+
+```{r}
+cells_remove_2 <- FetchData(object = KC_seu, vars = "RNA_snn_res.0.1") %>% 
+    filter(!RNA_snn_res.0.1 %in% c(0,1,2)) %>% 
+    rownames()
+length(cells_remove_2)
+```
+
+
+```{r fig.width=14, fig.height=14}
+
+p1 <- DimPlot(
+        object = KC_seu,
+        cells.highlight = cells_remove,
+        sizes.highlight = 1, 
+        cols.highlight = "black", 
+        cols = "lightsteelblue2",
+        reduction = "umap_20pcs",
+        pt.size = 1,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE
+    ) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+# p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+```{r}
+# Idents(KC_seu) <- "RNA_snn_res.0.1"
+# KC_sub_seu <- subset(x = KC_seu, idents = c(0,1,2))
+KC_sub_seu <- subset(x = KC_seu, cells = c(cells_remove,cells_remove_2), invert = TRUE)
+KC_sub_seu
+```
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = KC_sub_seu, 
+		group.by = "RNA_snn_res.0.1",
+        reduction = "umap_20pcs", 
+		cols = c("#00C1B2", "#6FB1E7", "#D494E1"),
+		pt.size = 8,
+        label = FALSE, 
+        label.box = FALSE,
+		raster = TRUE,
+		raster.dpi = c(2048,2048)) + 
+    # scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("mono")
+```
+
+```{r fig.width=5, fig.height=6}
+Idents(KC_sub_seu) <- "RNA_snn_res.0.1"
+VlnPlot(object = KC_sub_seu, features = "fru", cols = c("#00C1B2", "#6FB1E7", "#D494E1"), pt.size = -1, slot = "data", log = FALSE) + NoLegend()
+VlnPlot(object = KC_sub_seu, features = "fru", cols = c("#00C1B2", "#6FB1E7", "#D494E1"), pt.size = -1, slot = "counts", log = TRUE) + NoLegend()
+```
+
+```{r}
+fru_expression <- FetchData(object = KC_sub_seu, vars = c("fru", "RNA_snn_res.0.1"), slot = "data")
+fru_expression
+```
+
+
+
+
+
+```{r}
+wilcox.test(x = fru_expression$fru[fru_expression$RNA_snn_res.0.1 == "0"], y = fru_expression$fru[fru_expression$RNA_snn_res.0.1 == "1"])
+wilcox.test(x = fru_expression$fru[fru_expression$RNA_snn_res.0.1 == "0"], y = fru_expression$fru[fru_expression$RNA_snn_res.0.1 == "2"])
+wilcox.test(x = fru_expression$fru[fru_expression$RNA_snn_res.0.1 == "1"], y = fru_expression$fru[fru_expression$RNA_snn_res.0.1 == "2"])
+```
+
+```{r}
+p.adjust(p = c(2.2e-16, 2.2e-16, 2.2e-16), method = "bonf")
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=20}
+
+FeaturePlot(
+		object = KC_sub_seu,
+		features = "fru",
+		order = TRUE,
+		reduction = "umap_20pcs",
+		cols = c("lightsteelblue2", "black"),
+		pt.size = 1
+	) +
+    # NoAxes() +
+    # NoLegend() +
+    coord_fixed()
+
+
+```
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("lbm", "CG8641", "ab")
+plist <- FeaturePlot(
+    object = KC_sub_seu, 
+    reduction = "umap_20pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 1, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = FALSE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+```{r}
+deg_gene_filtered %>% pull(Cluster) %>% unique() %>% sort()
+```
+
+
+```{r}
+number_deg <- deg_gene_filtered %>% 
+    filter(Cluster %in% c("KC_a/b","KC_ap/bp","KC_y")) %>% 
+    filter(padj < 0.05) %>% 
+    filter(log2FoldChange > 0.4) %>% 
+    dplyr::count(Cluster, name = "n_deg") %>% 
+    dplyr::rename("cell_type" = "Cluster")
+number_deg
+```
+
+
+
+
+```{r fig.width=4, fig.height=6}
+number_deg <- deg_gene_filtered %>% 
+    filter(Cluster %in% c("KC_a/b","KC_ap/bp","KC_y")) %>% 
+    filter(padj < 0.05) %>% 
+    filter(log2FoldChange > 0.4) %>% 
+    dplyr::count(Cluster, name = "n_deg") %>% 
+    dplyr::rename("cell_type" = "Cluster")
+# number_deg
+
+fru_expression <- FetchData(object = KC_sub_seu, vars = c("fru", "RNA_snn_res.0.1"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>% 
+    filter(RNA_snn_res.0.1 %in% c(0,1,2)) %>% 
+    mutate(cell_type = if_else(RNA_snn_res.0.1 == 0, "KC_y",
+                               if_else(RNA_snn_res.0.1 == 1, "KC_a/b",
+                                       if_else(RNA_snn_res.0.1 == 2, "KC_ap/bp",
+                                               "unknown"
+                                               )
+                                       )
+                               ),
+           zscored_fru = scale(fru)
+           ) %>% 
+    group_by(cell_type) %>% 
+    summarise(
+        mean_zscored_fru = mean(zscored_fru),
+        log_fru = log2(mean(fru))) %>% 
+    left_join(number_deg, by = "cell_type")
+# fru_expression
+
+
+fru_expression %>% 
+    ggplot(aes(x = n_deg, y = log_fru)) +
+        geom_point() +
+        geom_smooth(method = lm, formula = "y ~ x") +
+        ggpubr::stat_cor(label.y = 2, size = 5) +
+        ggpubr::stat_regline_equation(label.y = 1.8, size = 5) +
+        ylab("log2(mean(fru UMI))") +
+        xlab("Number of DEG") +
+        labs(
+            # title = ,
+            # subtitle = ,
+            caption = "padj < 0.05; log2FC > 0.4"
+        ) +
+        theme_classic() +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
+
+
+```{r warning=FALSE, message=FALSE, fig.width=8, fig.height=12}
+plot_sex_bias_volcanoplots(clusterOI = "KC_y", deg_df = deg_gene_filtered, , x_lims = 1.6, y_lims = 260, p_cutoff = 0.05, fc_cutoff = 0.4)
+plot_sex_bias_volcanoplots(clusterOI = "KC_a/b", deg_df = deg_gene_filtered, , x_lims = 1.6, y_lims = 260, p_cutoff = 0.05, fc_cutoff = 0.4)
+plot_sex_bias_volcanoplots(clusterOI = "KC_ap/bp", deg_df = deg_gene_filtered, , x_lims = 1.6, y_lims = 260, p_cutoff = 0.05, fc_cutoff = 0.4)
+```
+
+
+```{r}
+qualitative_hcl(6, palette = "Set 2")
+```
+
+
+
+
+# Mono
+
+
+```{r}
+mono_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_monoamine_NEW_pub_seu--round3.rds")
+mono_seu
+```
+
+
+
+```{r}
+mono_seu@meta.data %>% colnames()
+```
+
+
+
+```{r fig.width=15, fig.height=10}
+DimPlot(object = mono_seu, 
+		group.by = "cell_type_broad",
+        reduction = "tsne_60pcs", 
+		pt.size = 1,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("mono")
+DimPlot(object = mono_seu, 
+		group.by = "cell_type",
+        reduction = "tsne_60pcs", 
+		pt.size = 1,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("mono")
+DimPlot(object = mono_seu, 
+		group.by = "RNA_snn_res.10",
+        reduction = "tsne_60pcs", 
+		pt.size = 1,
+        label = TRUE, 
+        label.box = FALSE,
+		raster = FALSE,
+		raster.dpi = c(2048,2048)) + 
+    scale_colour_discrete_qualitative(palette = "Set 2") +
+    NoLegend() + 
+    coord_fixed() +
+    ggtitle("mono")
+```
+
+
+
+
+```{r}
+cluster_order <- FetchData(object = mono_seu, vars = c("cell_type_broad", "RNA_snn_res.10")) %>% 
+    arrange(cell_type_broad, RNA_snn_res.10) %>% 
+    unique() %>% 
+    pull(RNA_snn_res.10) %>% 
+    as.character() %>% 
+    unique()
+cluster_order
+```
+
+
+```{r}
+mono_seu$RNA_snn_res.10 <- factor(x = mono_seu$RNA_snn_res.10, levels = cluster_order)
+Idents(mono_seu) <- "RNA_snn_res.10"
+```
+
+
+
+
+
+
+
+```{r fig.width=14, fig.height=4}
+
+genes_to_plot <- c("Imp", "dati", "DAT", "ple", "Fer2", "SerT", "Trh", "Tdc2", "Tbh", "Hdc", "fru")
+
+DotPlot(object = mono_seu, features = genes_to_plot, group.by = "RNA_snn_res.10") +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    coord_fixed() +
+    coord_flip()
+
+```
+
+
+
+
+
+
+```{r fig.width=14, fig.height=4}
+
+genes_to_plot <- c("Imp", "dati", "DAT", "ple", "Fer2", "SerT", "Trh", "Tdc2", "Tbh", "Hdc", "fru")
+
+DotPlot(object = mono_seu, features = genes_to_plot, group.by = "RNA_snn_res.10", cluster.idents = TRUE) +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    coord_fixed() +
+    coord_flip()
+
+```
+
+
+
+
+
+
+```{r fig.width=14, fig.height=4}
+
+genes_to_plot <- c("Imp", "dati", "DAT", "ple", "Fer2", "SerT", "Trh", "Tdc2", "Tbh", "Hdc", "fru")
+
+DotPlot(object = mono_seu, features = genes_to_plot, group.by = "RNA_snn_res.10", cluster.idents = TRUE, dot.scale = 10) +
+    scale_colour_continuous_diverging(palette = "Vik", limits = c(-2,2), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    coord_fixed() +
+    coord_flip()
+
+```
+
+
+
+
+
+```{r fig.width=14, fig.height=4}
+
+genes_to_plot <- c("Imp", "dati", "DAT", "ple", "Fer2", "SerT", "Trh", "Tdc2", "Tbh", "Hdc", "fru")
+
+DotPlot(object = mono_seu, features = genes_to_plot, group.by = "RNA_snn_res.10", cluster.idents = TRUE, scale = FALSE, dot.scale = 10) +
+    scale_colour_continuous_sequential(palette = "Inferno", rev = TRUE, limits = c(0,4), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    coord_fixed() +
+    coord_flip()
+
+```
+
+
+
+
+```{r fig.width=14, fig.height=4}
+
+genes_to_plot <- c("Imp", "dati", "DAT", "ple", "Fer2", "SerT", "Trh", "Tdc2", "Tbh", "Hdc", "fru")
+
+DotPlot(object = mono_seu, features = genes_to_plot, group.by = "RNA_snn_res.10", cluster.idents = TRUE, scale = FALSE, dot.scale = 10) +
+    scale_colour_continuous_sequential(palette = "Inferno", rev = FALSE, limits = c(0,4), oob = scales::squish) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    coord_fixed() +
+    coord_flip()
+
+```
+
+
+
+
+
+
+<!-- ```{r fig.width=12, fig.height=12} -->
+
+<!-- genes <- c("fru") -->
+<!-- plist <- FeaturePlot( -->
+<!--     object = mono_seu,  -->
+<!--     reduction = "tsne_60pcs",  -->
+<!--     features = genes, -->
+<!--     combine = FALSE, -->
+<!--     pt.size = 1,  -->
+<!--     # min.cutoff = 0, -->
+<!--     # max.cutoff = 3, -->
+<!--     # slot = "counts", -->
+<!--     cols = c("lightsteelblue2", "black"),  -->
+<!--     raster = FALSE, -->
+<!--     raster.dpi = c(1024, 1024), -->
+<!--     order = TRUE, -->
+<!--     coord.fixed = TRUE -->
+<!-- ) -->
+
+<!-- for (i in seq_along(plist)) { -->
+<!-- 	# plist[[i]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- 	plot(plist[[i]]) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+
+
+<!-- ```{r fig.width=12, fig.height=12} -->
+
+<!-- genes <- c("fru") -->
+<!-- plist <- FeaturePlot( -->
+<!--     object = mono_seu,  -->
+<!--     reduction = "tsne_60pcs",  -->
+<!--     features = genes, -->
+<!--     combine = FALSE, -->
+<!--     pt.size = 2,  -->
+<!--     # min.cutoff = 0, -->
+<!--     # max.cutoff = 3, -->
+<!--     # slot = "counts", -->
+<!--     cols = c("lightsteelblue2", "black"),  -->
+<!--     raster = FALSE, -->
+<!--     raster.dpi = c(1024, 1024), -->
+<!--     order = TRUE, -->
+<!--     coord.fixed = TRUE -->
+<!-- ) -->
+
+<!-- for (i in seq_along(plist)) { -->
+<!-- 	# plist[[i]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- 	plot(plist[[i]]) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+
+
+<!-- ```{r fig.width=12, fig.height=12} -->
+
+<!-- genes <- c("fru") -->
+<!-- plist <- FeaturePlot( -->
+<!--     object = mono_seu,  -->
+<!--     reduction = "tsne_60pcs",  -->
+<!--     features = genes, -->
+<!--     combine = FALSE, -->
+<!--     pt.size = 0.8,  -->
+<!--     # min.cutoff = 0, -->
+<!--     # max.cutoff = 3, -->
+<!--     # slot = "counts", -->
+<!--     cols = c("lightsteelblue2", "black"),  -->
+<!--     raster = FALSE, -->
+<!--     raster.dpi = c(1024, 1024), -->
+<!--     order = TRUE, -->
+<!--     coord.fixed = TRUE -->
+<!-- ) -->
+
+<!-- for (i in seq_along(plist)) { -->
+<!-- 	# plist[[i]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- 	plot(plist[[i]]) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+
+```{r fig.width=12, fig.height=12}
+
+genes <- c("fru")
+plist <- FeaturePlot(
+    object = mono_seu, 
+    reduction = "tsne_60pcs", 
+    features = genes,
+    combine = FALSE,
+    pt.size = 2, 
+    # min.cutoff = 0,
+    # max.cutoff = 3,
+    # slot = "counts",
+    cols = c("lightsteelblue2", "black"), 
+    raster = TRUE,
+    raster.dpi = c(1024, 1024),
+    order = TRUE,
+    coord.fixed = TRUE
+)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+<!-- ```{r fig.width=12, fig.height=12} -->
+
+<!-- genes <- c("fru") -->
+<!-- plist <- FeaturePlot( -->
+<!--     object = mono_seu,  -->
+<!--     reduction = "tsne_60pcs",  -->
+<!--     features = genes, -->
+<!--     combine = FALSE, -->
+<!--     pt.size = 1,  -->
+<!--     min.cutoff = 0, -->
+<!--     max.cutoff = 4, -->
+<!--     # slot = "counts", -->
+<!--     cols = c("lightsteelblue2", "black"),  -->
+<!--     raster = FALSE, -->
+<!--     raster.dpi = c(1024, 1024), -->
+<!--     order = TRUE, -->
+<!--     coord.fixed = TRUE -->
+<!-- ) -->
+
+<!-- for (i in seq_along(plist)) { -->
+<!-- 	# plist[[i]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- 	plot(plist[[i]]) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+<!-- ```{r fig.width=12, fig.height=12} -->
+
+<!-- genes <- c("fru") -->
+<!-- plist <- FeaturePlot( -->
+<!--     object = mono_seu,  -->
+<!--     reduction = "tsne_60pcs",  -->
+<!--     features = genes, -->
+<!--     combine = FALSE, -->
+<!--     pt.size = 1,  -->
+<!--     min.cutoff = 1, -->
+<!--     max.cutoff = 4, -->
+<!--     slot = "counts", -->
+<!--     cols = c("lightsteelblue2", "black"),  -->
+<!--     raster = FALSE, -->
+<!--     raster.dpi = c(1024, 1024), -->
+<!--     order = TRUE, -->
+<!--     coord.fixed = TRUE -->
+<!-- ) -->
+
+<!-- for (i in seq_along(plist)) { -->
+<!-- 	# plist[[i]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- 	plot(plist[[i]]) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+
+
+<!-- ```{r fig.width=12, fig.height=12} -->
+
+<!-- genes <- c("fru") -->
+<!-- plist <- FeaturePlot( -->
+<!--     object = mono_seu,  -->
+<!--     reduction = "tsne_60pcs",  -->
+<!--     features = genes, -->
+<!--     combine = FALSE, -->
+<!--     pt.size = 2,  -->
+<!--     min.cutoff = 1, -->
+<!--     max.cutoff = 6, -->
+<!--     slot = "counts", -->
+<!--     cols = c("lightsteelblue2", "black"),  -->
+<!--     raster = FALSE, -->
+<!--     raster.dpi = c(1024, 1024), -->
+<!--     order = TRUE, -->
+<!--     coord.fixed = TRUE -->
+<!-- ) -->
+
+<!-- for (i in seq_along(plist)) { -->
+<!-- 	# plist[[i]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- 	plot(plist[[i]]) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+
+<!-- ```{r fig.width=12, fig.height=12} -->
+
+<!-- genes <- c("fru") -->
+<!-- plist <- FeaturePlot( -->
+<!--     object = mono_seu,  -->
+<!--     reduction = "tsne_60pcs",  -->
+<!--     features = genes, -->
+<!--     combine = FALSE, -->
+<!--     pt.size = 0.8,  -->
+<!--     min.cutoff = 1, -->
+<!--     max.cutoff = 6, -->
+<!--     slot = "counts", -->
+<!--     cols = c("lightsteelblue2", "black"),  -->
+<!--     raster = FALSE, -->
+<!--     raster.dpi = c(1024, 1024), -->
+<!--     order = TRUE, -->
+<!--     coord.fixed = TRUE -->
+<!-- ) -->
+
+<!-- for (i in seq_along(plist)) { -->
+<!-- 	# plist[[i]]$layers[[1]]$aes_params$alpha = .1 -->
+<!-- 	plot(plist[[i]]) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+

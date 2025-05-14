@@ -1,0 +1,713 @@
+---
+title: "Allen_2025b_Analysis__Figure_5F_LHl2dorsal_subclustering"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(pheatmap)
+library(colorspace)
+library(tidyverse)
+
+```
+
+
+
+## Load Data
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_noKC_v2--1000VarGene--NoReg--Harmony_ori_exp_cell_devage--_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+DefaultAssay(meta_cb) <- "RNA"
+Idents(meta_cb) <- "RNA_snn_res.30"
+meta_cb
+```
+
+
+
+
+
+
+```{r}
+FetchData(object = meta_cb, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx", "dev_age"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(sex == "female") %>% 
+    filter(RNA_snn_res.6 %in% c(79)) %>%
+    filter(RNA_snn_res.8 %in% c(76)) %>%
+    filter(RNA_snn_res.15 %in% c(51)) %>%
+    filter(RNA_snn_res.30 %in% c(13)) %>%
+    # filter(RNA_snn_res.50 %in% c()) %>%
+    dplyr::pull(cell_id) %>%
+    length()
+```
+
+```{r}
+# should get 149
+654/4.2
+```
+
+
+
+```{r}
+cells_highlight <- FetchData(object = meta_cb, vars = c("RNA_snn_res.6", "RNA_snn_res.8", "RNA_snn_res.15", "RNA_snn_res.30", "RNA_snn_res.50", "sex", "dsx"), slot = "counts") %>% 
+    rownames_to_column("cell_id") %>%
+    filter(RNA_snn_res.6 %in% c(79)) %>%
+    filter(RNA_snn_res.8 %in% c(76)) %>%
+    filter(RNA_snn_res.15 %in% c(51)) %>%
+    filter(RNA_snn_res.30 %in% c(13)) %>%
+    # filter(RNA_snn_res.50 %in% c()) %>%
+    pull(cell_id)
+length(cells_highlight)
+```
+
+
+```{r fig.width=24, fig.height=12}
+
+p1 <- DimPlot(object = meta_cb,
+			  cells.highlight = cells_highlight,
+			  sizes.highlight = 0.4, 
+			  cols.highlight = "black", 
+			  cols = "lightsteelblue2",
+        reduction = "tsne_240pcs",
+	    split.by = "sex",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+# p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1)
+
+```
+
+
+
+
+
+
+
+```{r}
+LHl2dorsal_sub <- subset(x = meta_cb, cells = cells_highlight)
+LHl2dorsal_sub
+```
+
+```{r}
+LHl2dorsal_list <- SplitObject(object = LHl2dorsal_sub, split.by = "experiment")
+LHl2dorsal_list
+```
+
+
+
+
+
+```{r}
+colnames(meta_cb@meta.data)
+```
+
+
+
+```{r}
+LHl2dorsal_list_clean <- list()
+for (i in seq_along(LHl2dorsal_list)) {
+    counts_to_use <- "RNA"
+    LHl2dorsal_list_clean[[i]] <- CreateSeuratObject(counts = LHl2dorsal_list[[i]]@assays[[counts_to_use]])
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$orig.ident, col.name = "orig.ident")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$experiment, col.name = "experiment")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$tissue, col.name = "tissue")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$cell_nuclei, col.name = "cell_nuclei")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$availability, col.name = "availability")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$sex, col.name = "sex")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$percent_mt, col.name = "percent_mt")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$percent_rRNA, col.name = "percent_rRNA")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$percent_rProt, col.name = "percent_rProt")
+	LHl2dorsal_list_clean[[i]] <- AddMetaData(object = LHl2dorsal_list_clean[[i]], metadata = LHl2dorsal_list[[i]]$percent_hsp, col.name = "percent_hsp")
+}
+names(LHl2dorsal_list_clean) <- names(LHl2dorsal_list)
+LHl2dorsal_list_clean
+```
+
+
+
+
+
+```{r}
+rm(meta_cb)
+gc()
+```
+
+
+
+
+
+### Remove Low Quality Cells
+
+
+
+```{r}
+
+cells_to_keep_file <- "../../proj136/analyses/cell_lists/subclustering_LHl2dorsal_metablob_cells_to_keep--round2--500VarGene--NoReg--Harmony_ori_exp_cell.csv"
+
+if (file.exists(cells_to_keep_file)) {
+    cells_to_keep <- read_csv(file = cells_to_keep_file)
+    for (i in seq_along(LHl2dorsal_list_clean)) {
+        LHl2dorsal_list_clean[[i]] <-subset(LHl2dorsal_list_clean[[i]], cells = cells_to_keep$cell_id)
+    }
+    LHl2dorsal_list_clean
+}
+```
+
+
+### Save list
+
+```{r}
+write_rds(x = LHl2dorsal_list_clean, file = "../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu_list_clean--round2.rds")
+```
+
+
+
+
+# Normalize
+
+
+```{r warning=FALSE, message=FALSE}
+
+n_var_features <- 500
+
+for (i in seq_along(LHl2dorsal_list_clean)) {
+    LHl2dorsal_list_clean[[i]] <- NormalizeData(object = LHl2dorsal_list_clean[[i]],assay = "RNA")
+    LHl2dorsal_list_clean[[i]] <- FindVariableFeatures(object = LHl2dorsal_list_clean[[i]],
+                                                  selection.method = "mean.var.plot",     # "mean.var.plot" or "vst"
+                                                  nfeatures = n_var_features,
+                                                  mean.cutoff = c(0.01,Inf),
+                                                  dispersion.cutoff = c(0.01, Inf))
+}
+```
+
+
+
+
+
+
+# Integrate
+
+```{r}
+var_features <- SelectIntegrationFeatures(object.list = LHl2dorsal_list_clean, nfeatures = n_var_features)
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+                      "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+                      "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+                      "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+                      "lncRNA:roX1", "lncRNA:roX2"
+                      )
+var_features <- setdiff(var_features, iso_genes_remove)
+```
+
+
+```{r}
+LHl2dorsal_seu <- merge(LHl2dorsal_list_clean[[1]],
+		                unlist(LHl2dorsal_list_clean[2:length(LHl2dorsal_list_clean)]),
+		                merge.data = TRUE)
+
+VariableFeatures(LHl2dorsal_seu) <- var_features
+LHl2dorsal_seu
+```
+
+
+```{r}
+FetchData(object = LHl2dorsal_seu, vars = "experiment") %>% dplyr::count(experiment) %>% arrange(desc(n))
+```
+
+
+
+# Run PCA
+
+```{r}
+library(future)
+# plan("multisession", workers = 8)
+options(future.globals.maxSize = 8*1024*1024^2)
+
+DefaultAssay(LHl2dorsal_seu) <- "RNA"
+LHl2dorsal_seu <- ScaleData(object = LHl2dorsal_seu,
+                        assay = "RNA",
+                        vars.to.regress = NULL#c("experiment") #, "sex", "nCount_RNA", "percent_mt", "percent_hsp")
+                     )
+```
+
+
+```{r}
+plan("multisession", workers = 8)
+LHl2dorsal_seu <- RunPCA(LHl2dorsal_seu, features = var_features, npcs = 100, approx = FALSE)
+
+plan("sequential")
+invisible(gc())
+```
+
+
+# Run Harmony
+
+```{r}
+library(harmony)
+LHl2dorsal_seu <- RunHarmony(LHl2dorsal_seu,
+                    group.by.vars = c("orig.ident", "experiment", "cell_nuclei"),
+					lambda = c(1,1,1),
+                    assay.use = "RNA")
+invisible(gc())
+```
+
+
+
+
+
+
+
+
+# Visualize
+
+## Plot PCA
+
+
+
+
+
+
+```{r fig.width=12, fig.height=20, warning=FALSE, message=FALSE}
+library(colorspace)
+library(cowplot)
+p_list <- list()
+for (i in 1:10) {
+    p_list[[i]] <- DimHeatmap(LHl2dorsal_seu,
+                            reduction = "harmony",
+                            dims = i,
+                            cells = 500,
+                            balanced = TRUE,
+                            fast = FALSE) +
+        scale_fill_gradientn(colors = diverging_hcl(10, palette = "Vik"))
+}
+plot_grid(plotlist = p_list, ncol = 2)
+rm(p_list)
+invisible(gc())
+```
+
+
+## Run UMAP
+
+
+
+```{r}
+
+# test_pcs <- 60
+# test_pcs <- seq(10, 70, 10)
+test_pcs <- c(seq(5, 40, 5), 50, 60)
+
+for (i in seq_along(test_pcs)) {
+    LHl2dorsal_seu <- RunUMAP(LHl2dorsal_seu, 
+		                    reduction = "harmony", 
+		                    dims = 1:test_pcs[[i]],
+		                    n.neighbors = 50,
+		                    n.epochs = 1000,
+		                    min.dist = 0.01,
+		                    spread = 5,
+		                    fast = FALSE,
+		                    verbose = TRUE,
+		                    reduction.name = paste0("umap_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("umap", test_pcs[[i]], "pcs_"))
+}
+
+LHl2dorsal_seu@reductions[["umap"]] <- LHl2dorsal_seu@reductions[["umap_30pcs"]]
+# write_rds(x = LHl2dorsal_seu, file = "../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# LHl2dorsal_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+
+```
+
+
+```{r}
+
+for (i in seq_along(test_pcs)) {
+    LHl2dorsal_seu <- RunTSNE(LHl2dorsal_seu,
+		                    reduction = "harmony",
+		                    num_threads = 24,
+		                    verbose = F,
+		                    dims = 1:test_pcs[[i]],
+		                    do.fast = FALSE,
+		                    check_duplicates = F,
+		                    max_iter = 10000,
+		                    theta = 0.05,
+		                    reduction.name = paste0("tsne_", test_pcs[[i]], "pcs"),
+		                    reduction.key = paste0("tsne", test_pcs[[i]], "pcs_"))
+}
+
+LHl2dorsal_seu@reductions[["tsne"]] <- LHl2dorsal_seu@reductions[["tsne_30pcs"]]
+# write_rds(x = LHl2dorsal_seu, file = "../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# LHl2dorsal_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+
+```
+
+
+
+## Plot Embeddings
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = LHl2dorsal_seu, reduction = paste0("umap_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=8, fig.height=8}
+for (test_pc in test_pcs) {
+    plot(DimPlot(object = LHl2dorsal_seu, reduction = paste0("tsne_", test_pc, "pcs"), group.by = "experiment") + coord_fixed())
+}
+```
+
+
+
+```{r fig.width=10, fig.height=10}
+col_list <- scales::hue_pal()(length(unique(LHl2dorsal_seu$experiment)))
+test_pc <- 60
+p <- list()
+for (i in 1:length(unique(LHl2dorsal_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = LHl2dorsal_seu,
+                    reduction = paste0("umap_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(LHl2dorsal_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(LHl2dorsal_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(LHl2dorsal_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+
+
+```{r fig.width=8, fig.height=8}
+col_list <- scales::hue_pal()(length(unique(LHl2dorsal_seu$experiment)))
+test_pc <- 60
+p <- list()
+for (i in 1:length(unique(LHl2dorsal_seu@meta.data[["experiment"]]))) {
+  p[[i]] <- DimPlot(object = LHl2dorsal_seu,
+                    reduction = paste0("tsne_", test_pc, "pcs"),
+                    group.by = "experiment",
+                    pt.size = 0.4,
+                    order = c(unique(LHl2dorsal_seu@meta.data[["experiment"]])[i]),
+                    cols = c(rep("lightgrey",length(unique(LHl2dorsal_seu$experiment)) - 1),col_list[[i]])) +
+                NoLegend() +
+                NoAxes() +
+                coord_fixed() +
+                ggtitle(unique(LHl2dorsal_seu@meta.data[["experiment"]])[i])
+}
+plot_grid(plotlist = p, ncol = 3)
+```
+
+
+```{r}
+FetchData(object = LHl2dorsal_seu, vars = "experiment") %>% 
+    dplyr::count(experiment)
+```
+
+
+
+
+
+
+# Clustering
+
+```{r}
+LHl2dorsal_seu <- FindNeighbors(LHl2dorsal_seu,
+                       reduction = "harmony",
+                       dims = 1:30,
+                       k.param = 30,
+                       force.recalc = TRUE,
+                       verbose = TRUE)
+
+# in_conda <- R.home() %>% str_detect("R4_cbrg")
+# if (in_conda) {
+#     algorithm_use <- 4
+# } else {
+    algorithm_use <- 1
+# }
+
+LHl2dorsal_seu <- FindClusters(LHl2dorsal_seu,
+                        algorithm = algorithm_use,
+                        resolution = c(0.1,0.2,0.5,1,1.5,2,3,4,5,6,8,10),
+                        verbose = TRUE)
+```
+
+
+
+```{r}
+# write_rds(x = LHl2dorsal_seu, file = "../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# LHl2dorsal_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+```
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(LHl2dorsal_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = LHl2dorsal_seu, group.by = res[[i]],
+                           reduction = "umap_30pcs", 
+                           label = FALSE, 
+                           label.box = TRUE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(LHl2dorsal_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = LHl2dorsal_seu, group.by = res[[i]],
+                           reduction = "umap_30pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(LHl2dorsal_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = LHl2dorsal_seu, group.by = res[[i]],
+                           reduction = "tsne_30pcs", 
+                           label = FALSE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+```{r fig.width=12, fig.height=26}
+p_list <- list()
+res <- colnames(LHl2dorsal_seu@meta.data) %>% str_subset("RNA_snn_res") %>% head(n = 10)
+for (i in seq_along(res)) {
+    p_list[[i]] <- DimPlot(object = LHl2dorsal_seu, group.by = res[[i]],
+                           reduction = "tsne_30pcs", 
+                           label = TRUE, 
+                           label.box = FALSE) + 
+        NoLegend() + 
+        coord_fixed()
+}
+plot_grid(plotlist = p_list,  ncol = 2)
+```
+
+
+
+
+
+```{r fig.width=10}
+FetchData(object = LHl2dorsal_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment, RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "stack")
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = LHl2dorsal_seu, vars = c("experiment","RNA_snn_res.4")) %>% 
+    dplyr::count(experiment,RNA_snn_res.4) %>% 
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = experiment)) +
+        geom_bar(stat = "identity", position = "fill") 
+```
+
+
+
+```{r fig.width=10}
+FetchData(object = LHl2dorsal_seu, vars = c("experiment", "cell_nuclei", "RNA_snn_res.4")) %>% 
+    dplyr::count(cell_nuclei, RNA_snn_res.4) %>%
+    ggplot(aes(x = RNA_snn_res.4, y = n, fill = cell_nuclei)) +
+        geom_bar(stat = "identity", position = "fill") +
+        geom_hline(yintercept = 0.5, colour = "white")
+```
+
+
+
+
+```{r}
+FetchData(object = LHl2dorsal_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(RNA_snn_res.4, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+```{r}
+FetchData(object = LHl2dorsal_seu, vars = c("experiment", "sex", "RNA_snn_res.4")) %>% 
+    dplyr::count(experiment, sex) %>% 
+    spread("sex", "n")
+```
+
+
+
+
+
+
+
+# Save
+
+
+
+```{r}
+write_rds(x = LHl2dorsal_seu, file = "../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+# LHl2dorsal_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+```
+
+
+
+
+
+
+
+
+# Markers
+
+
+```{r}
+Idents(LHl2dorsal_seu) <- "RNA_snn_res.2"
+markers_LHl2dorsal <- FindAllMarkers(object = LHl2dorsal_seu, assay = "RNA", test.use = "wilcox",only.pos = TRUE)
+markers_LHl2dorsal
+```
+
+
+```{r}
+write_csv(x = markers_LHl2dorsal, file = "../../proj136/analyses/markers/subclustering_LHl2dorsal_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell--RNA_snn_res_2__cluster_markers.csv")
+markers_LHl2dorsal
+```
+
+
+
+```{r fig.width=10, fig.height=10}
+markers_LHl2dorsal %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(LHl2dorsal_seu, features = top10$gene) +
+    scale_fill_continuous_diverging(
+        palette = "Vik", rev = FALSE,
+        limits = c(-2,2), oob = scales::squish,
+        na.value = "white"
+    ) +
+    NoLegend()
+```
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

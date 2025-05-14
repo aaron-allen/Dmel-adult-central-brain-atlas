@@ -1,0 +1,1115 @@
+---
+title: "Allen_2025b_Analysis__Figure_3I_SMPad1_pseudotime"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+<!-- ## Job_ID = `r commandArgs(trailingOnly = TRUE)[2]` -->
+<!-- ## Input_file = `r commandArgs(trailingOnly = TRUE)[3]` -->
+<!-- ## Cluster_resolution = `r commandArgs(trailingOnly = TRUE)[4]` -->
+<!-- ## Subcluster_resolution = `r commandArgs(trailingOnly = TRUE)[5]` -->
+<!-- ## Subcluster_num_dims = `r commandArgs(trailingOnly = TRUE)[6]` -->
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+
+library(Seurat)
+library(cowplot)
+library(colorspace)
+library(tidyverse)
+
+library(monocle3)
+library(patchwork)
+
+library(RColorBrewer)
+library(ComplexHeatmap)
+
+
+```
+
+
+
+
+## TFs
+
+### r6.30
+
+
+```{r load-tfs}
+r630 <- read_tsv("../../../aallen/genomes/dmel/r6.30/gtf/dmel-all-r6.30.gtf.gz",
+                 col_names = c("sequence","source","feature","start","end","score","strand","phase","attributes")) %>%
+                 separate(attributes,c("gene_id","gene_symbol","transcript_id","transcript_symbol"),sep = ";")
+# r630
+
+r630_clean <- r630 %>% 
+    filter(feature == "gene") %>% 
+    select(gene_id, gene_symbol) %>% 
+    mutate(gene_id = gene_id %>% 
+                       str_remove_all(pattern = '"') %>% 
+                       str_remove(pattern = 'gene_id '),
+           gene_symbol = gene_symbol %>% 
+                           str_remove_all(pattern = '"') %>% 
+                           str_remove(pattern = 'gene_symbol ')
+           )
+# r630_clean
+
+tfs_fbgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_allTFs.txt")
+# tfs_fbgn
+
+tfs_symbol <- r630_clean %>% 
+    filter(gene_id %in% tfs_fbgn$FBgn) %>% 
+    select(gene_symbol) %>% 
+    mutate(gene_symbol = gene_symbol %>% 
+                           str_remove(pattern = ' ')
+           )
+# tfs_symbol
+```
+
+
+
+
+
+### iso remove
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+					  "lncRNA:roX1", "lncRNA:roX2"
+)
+```
+
+
+
+
+
+# Variables
+
+
+```{r}
+
+n_var_genes <- 2000
+num_pcs <- 16
+num_neighbours <- 30
+
+monocle_alignment_group <- "experiment"
+monocle_residual_model_formula_str <- NULL #"~sex"
+
+set_verbose <- TRUE
+
+
+smooth_spline_df <- 8
+
+```
+
+
+
+
+# Pseudotime
+
+## Load data
+
+
+
+
+```{r}
+SMPad1_seu <- read_rds("../../proj136/analyses/rds_files/subclustering_SMPad1_devage_def1__seu--round1--500VarGene--NoReg--Harmony_ori_exp_cell.rds")
+SMPad1_seu
+```
+
+
+```{r warning=FALSE, message=FALSE, fig.height=12, fig.width=22}
+
+
+DimPlot(object = SMPad1_seu, 
+		group.by = "RNA_snn_res.0.2",
+        reduction = "umap_10pcs", 
+		pt.size = 2,
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+DimPlot(object = SMPad1_seu, 
+		group.by = "RNA_snn_res.4",
+        reduction = "umap_20pcs", 
+		pt.size = 2,
+        label = TRUE, 
+        label.box = FALSE) + 
+    NoLegend() + 
+    coord_fixed()
+
+
+```
+
+
+
+```{r fig.height=12, fig.width=12}
+
+genes <- c("Ptx1", "dve", "VGlut", "VAChT")
+plist <- FeaturePlot(
+			object = SMPad1_seu, 
+			reduction = "umap_20pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 2, 
+			# min.cutoff = 1,
+			# max.cutoff = 2,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE
+		)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+## Find _Imp_ cells
+
+
+
+
+```{r fig.height=12, fig.width=12}
+
+genes <- c("Imp", "dati", "br", "pdm3")
+plist <- FeaturePlot(
+			object = SMPad1_seu, 
+			reduction = "umap_20pcs", 
+			features = genes,
+			combine = FALSE,
+			ncol = 1,
+			pt.size = 2, 
+			# min.cutoff = 1,
+			# max.cutoff = 2,
+			# slot = "counts",
+			cols = c("lightsteelblue2", "black"), 
+			raster = FALSE,
+			raster.dpi = c(1024, 1024),
+			order = TRUE,
+			coord.fixed = TRUE
+		)
+
+for (i in seq_along(plist)) {
+	# plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r avg-exp}
+avg_exp <- AverageExpression(object = SMPad1_seu, 
+                             assays = "RNA", 
+                             slot = "counts",
+                             features = c("Imp", "dati", "mamo", "pros", "br", "pdm3",
+                                          "dsx", "fru"),
+                             group.by = "RNA_snn_res.4")
+
+scaled_exp <- avg_exp$RNA %>% 
+    as.data.frame() %>% 
+    rownames_to_column("gene") %>% 
+    gather("cluster", "expression", -gene) %>% 
+    spread(gene, expression) %>% 
+    column_to_rownames("cluster") %>% 
+    as.matrix() %>% 
+    scale() %>% 
+    as.data.frame() %>% 
+    rownames_to_column("cluster") %>% 
+    gather("gene", "expression", -cluster) 
+# scaled_exp
+```
+
+
+```{r fig.width=10, fig.height=6}
+scaled_exp %>% 
+    spread(cluster, expression) %>% 
+    column_to_rownames("gene") %>% 
+    pheatmap::pheatmap(.,
+         breaks = seq(-2,2,0.02),
+         color = diverging_hcl(201, "Vik"),
+         border_color = NA,
+         cluster_rows = F,
+         cluster_cols = T,
+         fontsize = 16,
+         angle_col = 90)
+```
+
+
+
+
+### All Imp Clusters
+
+
+```{r}
+all_imp_cluster <- scaled_exp %>% 
+    filter(gene == "Imp") %>%
+    filter(expression > 0.2) %>% 
+    pull(cluster)
+all_imp_cluster
+```
+
+
+```{r}
+in_conda <- R.home() %>% str_detect("R4_cbrg")
+if (!in_conda) {
+    all_imp_cluster <- all_imp_cluster %>% str_remove("g")
+    all_imp_cluster
+}
+```
+
+
+
+```{r}
+Idents(SMPad1_seu) <- "RNA_snn_res.4"
+all_imp_cells <- WhichCells(object = SMPad1_seu, idents = all_imp_cluster)
+head(all_imp_cells)
+```
+
+
+```{r fig.width=8, fig.height=8}
+
+DimPlot(
+		object = SMPad1_seu,
+		cells.highlight = all_imp_cells,
+		sizes.highlight = 2, 
+		cols.highlight = "black", 
+		cols = "lightsteelblue2",
+		reduction = "umap_20pcs",
+		pt.size = 2,
+		raster = FALSE,
+		label = FALSE,
+		label.box = FALSE,
+		repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+    coord_fixed()
+
+```
+
+```{r}
+all_imp_metadata <- FetchData(object = SMPad1_seu, vars = "RNA_snn_res.4") %>% 
+    rownames_to_column("cell_id") %>% 
+    mutate(all_imp = if_else(cell_id %in% all_imp_cells, "yes", "no"))
+
+SMPad1_seu <- AddMetaData(object = SMPad1_seu, metadata = all_imp_metadata$all_imp, col.name = "imp_cells")
+```
+
+
+## Var Genes
+
+
+
+```{r}
+SMPad1_split <- SplitObject(object = SMPad1_seu, split.by = "experiment")
+SMPad1_split
+```
+
+
+
+```{r warning=FALSE, message=FALSE}
+
+for (i in seq_along(SMPad1_split)) {
+    SMPad1_split[[i]] <- FindVariableFeatures(object = SMPad1_split[[i]],
+                                                  selection.method = "mean.var.plot",
+                                                  nfeatures = n_var_genes,
+                                                  mean.cutoff = c(0.01,Inf),
+                                                  dispersion.cutoff = c(0.01, Inf))
+}
+
+```
+
+
+```{r}
+
+var_features <- SelectIntegrationFeatures(object.list = SMPad1_split, nfeatures = n_var_genes)
+var_features <- setdiff(var_features, iso_genes_remove)
+
+```
+
+
+
+
+
+
+## Make cds
+
+
+
+<!-- ```{r} -->
+
+<!-- SMPad1_split[["sleep"]] <- NULL -->
+<!-- SMPad1_split[["species"]] <- NULL -->
+
+<!-- SMPad1_sub <- merge(SMPad1_split[[1]], -->
+<!-- 		                unlist(SMPad1_split[2:length(SMPad1_split)]), -->
+<!-- 		                merge.data = TRUE) -->
+
+<!-- SMPad1_seu -->
+<!-- SMPad1_sub -->
+
+<!-- ``` -->
+
+
+
+
+<!-- ```{r create-cds} -->
+
+<!-- expression_matrix <- SMPad1_sub@assays[["RNA"]]@counts -->
+<!-- cell_metadata <- SMPad1_sub@meta.data -->
+<!-- gene_annotation <-  data.frame(gene = rownames(SMPad1_sub)) %>% -->
+<!--     mutate(gene_short_name = gene) %>% -->
+<!--     column_to_rownames("gene") -->
+
+<!-- SMPad1_cds <- new_cell_data_set(expression_matrix, -->
+<!--                          cell_metadata = cell_metadata, -->
+<!--                          gene_metadata = gene_annotation) -->
+
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- rm(SMPad1_split, SMPad1_sub) -->
+<!-- gc() -->
+<!-- ``` -->
+
+
+
+
+```{r}
+
+expression_matrix <- SMPad1_seu@assays[["RNA"]]@counts
+cell_metadata <- SMPad1_seu@meta.data
+gene_annotation <-  data.frame(gene = rownames(SMPad1_seu)) %>%
+    mutate(gene_short_name = gene) %>%
+    column_to_rownames("gene")
+
+SMPad1_cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+
+```
+
+
+
+```{r}
+rm(SMPad1_split)
+gc()
+```
+
+
+## Process cds
+
+
+
+
+```{r root-function}
+
+get_earliest_principal_node <- function(SMPad1_cds, early_born="yes"){
+  cell_ids <- which(colData(SMPad1_cds)[, "imp_cells"] == early_born)
+
+  closest_vertex <- SMPad1_cds@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(SMPad1_cds), ])
+  root_pr_nodes <- igraph::V(principal_graph(SMPad1_cds)[["UMAP"]])$name[as.numeric(names(which.max(table(closest_vertex[cell_ids,]))))]
+
+  root_pr_nodes
+}
+
+```
+
+
+
+```{r}
+
+# genes_use <- dplyr::setdiff(VariableFeatures(SMPad1_seu), iso_genes_remove)
+genes_use <- var_features
+
+```
+
+
+
+
+```{r fig.height=20, fig.width=20, message=FALSE, warning=FALSE}
+
+
+SMPad1_cds <- preprocess_cds(SMPad1_cds, method = "PCA",
+                      num_dim = num_pcs,
+                      norm_method = "log",
+                      use_genes = genes_use,
+                      verbose = set_verbose
+                      )
+
+SMPad1_cds <- align_cds(SMPad1_cds,
+                 preprocess_method = "PCA",
+                 alignment_k = num_neighbours,
+                 alignment_group = monocle_alignment_group,
+                 residual_model_formula_str = monocle_residual_model_formula_str,
+                 verbose = TRUE
+                 )
+
+SMPad1_cds <- reduce_dimension(SMPad1_cds,
+                        max_components = 2,
+                        reduction_method = "UMAP",
+                        umap.n_neighbors = num_neighbours,
+                        cores = 10,
+                        verbose = set_verbose
+                        )
+
+
+SMPad1_cds <- cluster_cells(SMPad1_cds,
+                     reduction_method = "UMAP",
+                     k = num_neighbours,
+                     cluster_method = "louvain",
+                     verbose = set_verbose
+                     )
+
+SMPad1_cds <- learn_graph(SMPad1_cds,
+                   use_partition = FALSE,
+                   verbose = set_verbose
+                   )
+
+
+SMPad1_cds <- order_cells(SMPad1_cds, root_pr_nodes=get_earliest_principal_node(SMPad1_cds))
+
+
+```
+
+
+
+
+
+## Plot cds
+
+
+
+```{r plot-cds, fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
+
+
+plot(plot_cells(SMPad1_cds, 
+                 label_groups_by_cluster = FALSE,  
+                 color_cells_by = "RNA_snn_res.4",
+                 group_label_size = 6,
+                 cell_size = 2, 
+                 show_trajectory_graph = FALSE) + 
+    coord_fixed() +
+        labs(caption = paste0(
+                "PCs = ",num_pcs, "; ",
+                "nNeigh. = ", num_neighbours
+            )
+        )
+    )
+plot(plot_cells(SMPad1_cds,
+                 label_groups_by_cluster = FALSE,  
+                 color_cells_by = "experiment", 
+                 group_label_size = 6,
+                 cell_size = 2, 
+                 show_trajectory_graph = FALSE) + 
+    coord_fixed() +
+        labs(caption = paste0(
+                "PCs = ",num_pcs, "; ",
+                "nNeigh. = ", num_neighbours
+            )
+        )
+    )
+plot(plot_cells(SMPad1_cds,
+                 label_groups_by_cluster = FALSE,  
+                 color_cells_by = "sex", 
+                 group_label_size = 6,
+                 cell_size = 2, 
+                 show_trajectory_graph = FALSE) + 
+    coord_fixed() +
+        labs(caption = paste0(
+                "PCs = ",num_pcs, "; ",
+                "nNeigh. = ", num_neighbours
+            )
+        )
+    )
+
+genes <- c("Imp","pdm3","br","dati", "fru","dsx")
+for (ii in seq_along(genes)) {
+    plot(plot_cells(SMPad1_cds,
+               genes = genes[[ii]],
+               label_cell_groups = FALSE,
+               show_trajectory_graph = FALSE,
+               cell_size = 2) + 
+    coord_fixed() +
+        labs(caption = paste0(
+                "PCs = ",num_pcs, "; ",
+                "nNeigh. = ", num_neighbours
+            )
+        )
+        )
+}
+
+
+plot(plot_cells(SMPad1_cds,
+           color_cells_by = "imp_cells",
+           label_cell_groups = FALSE,
+           label_leaves = TRUE,
+           label_branch_points = TRUE,
+           graph_label_size = 1.5,
+           cell_size = 2) + 
+    coord_fixed() +
+        labs(caption = paste0(
+                "PCs = ",num_pcs, "; ",
+                "nNeigh. = ", num_neighbours
+            )
+        )
+    )
+
+
+plot(plot_cells(SMPad1_cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           trajectory_graph_segment_size = 2,
+           graph_label_size = 1.5,
+           cell_size = 2,
+           rasterize = TRUE) +
+    coord_fixed() +
+        labs(caption = paste0(
+                "PCs = ",num_pcs, "; ",
+                "nNeigh. = ", num_neighbours
+            )
+        )
+    )
+
+
+
+
+```
+
+
+
+```{r}
+SMPad1_cds_female <- SMPad1_cds[
+  # If necessary, rowData filter goes here  
+  , 
+  colData(SMPad1_cds) %>%
+    subset(
+      sex == "female"
+    ) %>%
+    row.names
+]
+# cds_female
+SMPad1_cds_male <- SMPad1_cds[
+  # If necessary, rowData filter goes here  
+  , 
+  colData(SMPad1_cds) %>%
+    subset(
+      sex == "male"
+    ) %>%
+    row.names
+]
+# cds_male
+```
+
+
+```{r fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
+
+plot(plot_cells(SMPad1_cds_female,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           trajectory_graph_segment_size = 2,
+           graph_label_size = 1.5,
+           cell_size = 4,
+           rasterize = TRUE) +
+    coord_fixed() +
+        labs(caption = paste0(
+                "PCs = ",num_pcs, "; ",
+                "nNeigh. = ", num_neighbours
+            )
+        )
+    )
+plot(plot_cells(SMPad1_cds_male,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           trajectory_graph_segment_size = 2,
+           graph_label_size = 1.5,
+           cell_size = 4,
+           rasterize = TRUE) +
+    coord_fixed() +
+        labs(caption = paste0(
+                "PCs = ",num_pcs, "; ",
+                "nNeigh. = ", num_neighbours
+            )
+        )
+    )
+
+
+```
+
+
+
+
+
+
+
+## Sig Genes along pseudotime
+
+
+
+```{r sig-genes}
+modulated_sig_SMPad1_genes <- graph_test(SMPad1_cds, neighbor_graph = "principal_graph", cores = 10)
+sig_SMPad1_genes <- row.names(subset(modulated_sig_SMPad1_genes, q_value < 1e-50 & morans_I > 0.2)) %>% dplyr::setdiff(iso_genes_remove) 
+sig_SMPad1_genes %>% sort()
+```
+
+
+
+```{r}
+pt_SMPad1_matrix <- exprs(SMPad1_cds)[match(sig_SMPad1_genes,rownames(rowData(SMPad1_cds))),order(pseudotime(SMPad1_cds))]
+pt_SMPad1_matrix <- t(apply(pt_SMPad1_matrix,1,function(x){smooth.spline(x, df = smooth_spline_df)$y}))
+pt_SMPad1_matrix <- t(apply(pt_SMPad1_matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(pt_SMPad1_matrix) <- sig_SMPad1_genes
+```
+
+
+
+```{r}
+#K means with 6 groups
+htkm <- ComplexHeatmap::Heatmap(
+  pt_SMPad1_matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2,length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 10),
+  km                           = 10,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+
+#Ward.D2 Hierarchical Clustering
+hthc <- ComplexHeatmap::Heatmap(
+  pt_SMPad1_matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 10),
+  clustering_method_rows       = "ward.D2",
+  clustering_method_columns    = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+```
+
+```{r fig.width=8, fig.height=20}
+print(htkm)
+print(hthc)
+```
+
+
+
+
+
+#### sig TFs
+
+```{r}
+sig_SMPad1_tf_genes <- dplyr::intersect(sig_SMPad1_genes, tfs_symbol$gene_symbol)
+sig_SMPad1_tf_genes
+```
+
+
+```{r}
+tf_pt_SMPad1_matrix <- exprs(SMPad1_cds)[match(sig_SMPad1_tf_genes,rownames(rowData(SMPad1_cds))),order(pseudotime(SMPad1_cds))]
+tf_pt_SMPad1_matrix <- t(apply(tf_pt_SMPad1_matrix,1,function(x){smooth.spline(x, df = smooth_spline_df)$y}))
+tf_pt_SMPad1_matrix <- t(apply(tf_pt_SMPad1_matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(tf_pt_SMPad1_matrix) <- sig_SMPad1_tf_genes
+```
+
+
+```{r}
+#K means with 6 groups
+htkm <- Heatmap(
+  tf_pt_SMPad1_matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2,length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  km                           = 10,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+
+#Ward.D2 Hierarchical Clustesubclustered_cluster
+hthc <- Heatmap(
+  tf_pt_SMPad1_matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  clustering_method_rows       = "ward.D2",
+  clustering_method_columns    = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+```
+
+
+
+```{r fig.width=8, fig.height=5}
+print(htkm)
+print(hthc)
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+# List of genes you are interested in
+genes_of_interest <- sig_SMPad1_tf_genes # Replace with actual gene names
+
+# Extract expression data
+expr_data <- as.data.frame(exprs(SMPad1_cds)[genes_of_interest, ])
+
+# Get metadata including pseudotime and your variable of interest
+cell_metadata <- colData(SMPad1_cds) %>%
+    as.data.frame() %>%
+    rownames_to_column("cell_id") %>%
+    select(cell_id, sex) %>% 
+    left_join(pseudotime(SMPad1_cds) %>%
+                as.data.frame() %>%
+                rownames_to_column("cell_id") %>%
+                dplyr::rename("pseudotime" = "."),
+              by = "cell_id"
+              ) %>% 
+    column_to_rownames("cell_id")
+
+# Combine expression with metadata
+expr_data <- expr_data %>%
+    t() %>%
+    as.data.frame() %>%
+    mutate(cell_id = colnames(SMPad1_cds),
+         pseudotime = cell_metadata$pseudotime,
+         sex = cell_metadata$sex)
+
+# Order by pseudotime
+expr_data <- expr_data %>%
+    arrange(pseudotime)
+
+
+```
+
+
+
+```{r}
+# genes_sub <- c("fru", "dsx", "Imp", "br", "pdm3" , "Eip93F", "danr", "bab2")
+genes_sub <- c("ct", "ab", "danr", "dan", "bab1", "bab2", "br", "Eip93F")
+
+sex_pt_SMPad1_matrix <- exprs(SMPad1_cds)[match(genes_sub,rownames(rowData(SMPad1_cds))),order(pseudotime(SMPad1_cds))]
+sex_pt_SMPad1_matrix <- t(apply(sex_pt_SMPad1_matrix,1,function(x){smooth.spline(x, df = smooth_spline_df)$y}))
+sex_pt_SMPad1_matrix <- t(apply(sex_pt_SMPad1_matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(sex_pt_SMPad1_matrix) <- genes_sub 
+```
+
+
+
+```{r}
+library(dplyr)
+library(zoo)
+
+# Sample data
+set.seed(123)
+df <- expr_data %>% 
+    select(pseudotime, sex) %>% 
+    rownames_to_column("cell_id") %>% 
+    left_join(FetchData(object = SMPad1_seu, 
+                        vars = "experiment") %>% 
+                  rownames_to_column("cell_id"),
+              by = "cell_id") %>% 
+    mutate(sex = if_else(experiment %in% c("sleep", "species"), "NA", sex))
+
+# Define rolling window size
+window_size <-100
+
+# Compute rolling log-ratio
+df <- df %>%
+  mutate(
+    count_female = rollapply(sex == "female", width = window_size, FUN = sum, fill = 0, align = "right"),
+    count_male = rollapply(sex == "male", width = window_size, FUN = sum, fill = 0, align = "right"),
+    log_ratio = log2(count_female + 0.01) - log2(count_male + 0.01)  # log1p(a) - log1p(b) = log((1+a)/(1+b))
+  )
+
+# View result
+print(df)
+
+```
+
+
+
+
+```{r}
+column_ha <- HeatmapAnnotation(sex = expr_data$sex, log_ratio = df$log_ratio, 
+                               col = list(sex = c("female" = "#c77cff", "male" = "#00bfc4", "NA" = "grey90"),
+                                          log_ratio = circlize::colorRamp2(c(-4, 0, 4), c("#00bfc4", "black", "#c77cff"))),
+                               # annotation_height = c(20,20),
+                               simple_anno_size = unit(20, "mm")
+                               )
+column_ha
+```
+
+
+
+
+```{r fig.width=16, fig.height=4}
+
+hthc <- Heatmap(
+  sex_pt_SMPad1_matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  row_title_rot                = 0,
+  cluster_rows                 = FALSE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  top_annotation = column_ha,
+  use_raster = TRUE)
+
+
+print(hthc)
+```
+
+
+```{r fig.width=16, fig.height=4}
+
+hthc <- Heatmap(
+  sex_pt_SMPad1_matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  row_title_rot                = 0,
+  cluster_rows                 = FALSE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  top_annotation = column_ha,
+  use_raster = FALSE)
+
+
+print(hthc)
+```
+
+
+
+
+```{r}
+column_ha <- HeatmapAnnotation(sex = df$sex, log_ratio = df$log_ratio, 
+                               col = list(sex = c("female" = "#c77cff", "male" = "#00bfc4", "NA" = "grey90"),
+                                          log_ratio = circlize::colorRamp2(c(-4, 0, 4), c("#00bfc4", "black", "#c77cff"))),
+                               # annotation_height = c(20,20),
+                               simple_anno_size = unit(20, "mm")
+                               )
+column_ha
+```
+
+
+
+
+```{r fig.width=16, fig.height=4}
+
+hthc <- Heatmap(
+  sex_pt_SMPad1_matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  row_title_rot                = 0,
+  cluster_rows                 = FALSE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  top_annotation = column_ha,
+  use_raster = TRUE)
+
+
+print(hthc)
+```
+
+
+```{r fig.width=16, fig.height=4}
+
+hthc <- Heatmap(
+  sex_pt_SMPad1_matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  row_title_rot                = 0,
+  cluster_rows                 = FALSE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  top_annotation = column_ha,
+  use_raster = FALSE)
+
+
+print(hthc)
+```
+
+
+
+
+
+
+# Save Data
+
+```{r}
+object_group <- "SMPad1"
+```
+
+
+```{r}
+core_save_name <- paste0(
+	"pseudotime_FINALish--",
+	object_group, "_cds--",
+	n_var_genes, "VarGenes--",
+	num_neighbours, "nNeigh--",
+	num_pcs, "PCs--",
+	"MonGroup_", str_remove(string = monocle_alignment_group, pattern = fixed("."))
+)
+core_save_name
+```
+
+```{r}
+write_csv(
+	x = modulated_sig_SMPad1_genes,
+	file = paste0("../../proj136/analyses/markers/",
+        core_save_name,
+        "--modulated_sig_genes.csv"
+    )
+)
+
+write_rds(
+	x = SMPad1_cds,
+	file = paste0("../../proj136/analyses/rds_files/",
+        core_save_name,
+        ".rds"
+    )
+)
+```
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+

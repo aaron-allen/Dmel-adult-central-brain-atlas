@@ -1,0 +1,1466 @@
+---
+title: "Sexed_Paper_1_Analysis__Figure_3_pseudotime"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
+---
+
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
+```
+
+
+
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(dev = c("png", "cairo_pdf"),
+                      dev.args=list(bg="transparent"),
+                      fig.align = "center",
+                      fig.height = 5,
+                      fig.width = 8.5,
+                      dpi = 300,
+                      pdf.options(encoding = "ISOLatin9.enc"),
+                      fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                                        format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+                      fig.retina = 1,
+                      warning = TRUE,
+                      message = TRUE)
+```
+
+
+
+# Setup
+
+
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+
+
+
+## Parameters
+
+
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(cowplot)
+library(colorspace)
+library(tidyverse)
+
+library(monocle)
+library(patchwork)
+
+```
+
+
+
+## Load Data
+
+
+
+```{r}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds")
+DefaultAssay(meta_cb) <- "RNA"
+meta_cb
+```
+
+
+# The meta brain
+
+
+## Plots
+
+```{r tsne-plain, warning=FALSE, message=FALSE, fig.height=14, fig.width=24}
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.2,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+	ggtitle("") +
+    coord_fixed()
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1[[1]] + 
+	 	guides(colour = guide_legend(override.aes = list(size = 4, alpha = 1)))
+	 )
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.2,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+	ggtitle("") +
+    coord_fixed()
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1[[1]] + 
+	 	guides(colour = guide_legend(override.aes = list(size = 4, alpha = 1)))
+	 )
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.2,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+	ggtitle("") +
+    coord_fixed()
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1[[1]] + 
+	 	guides(colour = guide_legend(override.aes = list(size = 4, alpha = 1)))
+	 )
+
+```
+
+
+
+```{r tsne-plain, fig.height=14, fig.width=24}
+
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "umap_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.2,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+	ggtitle("") +
+    coord_fixed()
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1[[1]] + 
+	 	guides(colour = guide_legend(override.aes = list(size = 4, alpha = 1)))
+	 )
+
+p1 <- DimPlot(object = meta_cb,
+        reduction = "umap_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.2,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+	ggtitle("") +
+    coord_fixed()
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1[[1]] + 
+	 	guides(colour = guide_legend(override.aes = list(size = 4, alpha = 1)))
+	 )
+
+```
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("Imp", "dati", "br", "pdm3")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+           min.cutoff = 1,
+		   max.cutoff = 3,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("bab1", "bab2")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+           # min.cutoff = 1,
+		   max.cutoff = 3,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("CG14687", "VGlut")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+           min.cutoff = 1,
+		   max.cutoff = 3,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("tim", "vri", "cry", "Pdf")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+           min.cutoff = 1,
+		   max.cutoff = 3,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("per")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+           min.cutoff = 1,
+		   max.cutoff = 3,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("Kr", "ct", "sr", "pdm2")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+           # min.cutoff = 1,
+		   max.cutoff = 3,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+```{r fig.height=12, fig.width=20}
+
+genes <- c("dsx", "otp", "bsh")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+           min.cutoff = 1,
+		   max.cutoff = 3,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+genes <- c("fru")
+plist <- FeaturePlot(object = meta_cb, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.4, 
+           min.cutoff = 2,
+		   max.cutoff = 6,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+
+```
+
+
+
+
+
+
+
+
+
+## subset whole cell
+
+```{r}
+whole_cells <- FetchData(object = meta_cb, vars = "cell_nuclei") %>% filter(cell_nuclei == "cell") %>% rownames()
+meta_cb_whole_cell <- subset(x = meta_cb, cells = whole_cells)
+meta_cb_whole_cell
+```
+
+
+
+
+
+
+
+
+```{r fig.height=20, fig.width=24}
+
+
+p1 <- DimPlot(object = meta_cb_whole_cell,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = FALSE,
+        label.box = FALSE,
+        repel = FALSE) +
+    # NoAxes() +
+    NoLegend() +
+	ggtitle("") +
+    coord_fixed()
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1[[1]] + 
+	 	guides(colour = guide_legend(override.aes = list(size = 4, alpha = 1)))
+	 )
+
+p1 <- DimPlot(object = meta_cb_whole_cell,
+        reduction = "tsne_240pcs",
+        group.by = "subcluster_clusters",
+        pt.size = 0.4,
+        raster = FALSE,
+        label = TRUE,
+        label.box = FALSE,
+        repel = TRUE) +
+    # NoAxes() +
+    NoLegend() +
+	ggtitle("") +
+    coord_fixed()
+    
+p1[[1]]$layers[[1]]$aes_params$alpha = .1
+plot(p1[[1]] + 
+	 	guides(colour = guide_legend(override.aes = list(size = 4, alpha = 1)))
+	 )
+
+```
+
+
+
+
+```{r fig.height=20, fig.width=24}
+
+genes <- c("Imp", "dati", "br", "pdm3")
+plist <- FeaturePlot(object = meta_cb_whole_cell, 
+           reduction = "tsne_240pcs", 
+           features = genes,
+           combine = FALSE,
+           ncol = 1,
+           pt.size = 0.8, 
+           min.cutoff = 1,
+		   max.cutoff = 3,
+		   slot = "counts",
+           cols = c("lightsteelblue2", "black"), 
+           raster = FALSE,
+           raster.dpi = c(1024, 1024),
+           order = TRUE,
+           coord.fixed = TRUE)
+
+for (i in seq_along(plist)) {
+	plist[[i]]$layers[[1]]$aes_params$alpha = .1
+	plot(plist[[i]])
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Glut_014,Glut_038
+GABA_013,GABA_015,GABA_035
+Glut_059
+Achl_059
+
+Achl_048
+Achl_053
+GABA_061
+
+
+
+
+
+# TFs
+
+### r6.30
+
+
+```{r}
+r630 <- read_tsv("../../../aallen/genomes/dmel/r6.30/gtf/dmel-all-r6.30.gtf.gz",
+                 col_names = c("sequence","source","feature","start","end","score","strand","phase","attributes")) %>%
+                 separate(attributes,c("gene_id","gene_symbol","transcript_id","transcript_symbol"),sep = ";")
+# r630
+```
+
+
+```{r}
+r630_clean <- r630 %>% 
+    filter(feature == "gene") %>% 
+    select(gene_id, gene_symbol) %>% 
+    mutate(gene_id = gene_id %>% 
+                       str_remove_all(pattern = '"') %>% 
+                       str_remove(pattern = 'gene_id '),
+           gene_symbol = gene_symbol %>% 
+                           str_remove_all(pattern = '"') %>% 
+                           str_remove(pattern = 'gene_symbol ')
+           )
+# r630_clean
+
+tfs_fbgn <- read_csv("../../../aallen/gene_lists/gene_sets/FlyBase_IDs_allTFs.txt")
+# tfs_fbgn
+
+tfs_symbol <- r630_clean %>% 
+    filter(gene_id %in% tfs_fbgn$FBgn) %>% 
+    select(gene_symbol) %>% 
+    mutate(gene_symbol = gene_symbol %>% 
+                           str_remove(pattern = ' ')
+           )
+tfs_symbol
+```
+
+
+
+
+
+### iso remove
+
+```{r}
+iso_genes_remove <- c("fru-plus", "fru-dP1", "fru-dP1-plus", "fruA", "fruB", "fruC",
+					  "fruD1", "fruD2", "fruABint", "fruBCint", "fruCint", "fruPr1Ex1",
+					  "fruPr1Ex2", "fruCOM", "dsxM", "dsxF", "dsxCOM",
+					  "EGFP", "GFP", "mCherry", "Gal4", "GAL4",
+					  "lncRNA:roX1", "lncRNA:roX2"
+)
+```
+
+
+
+
+
+
+
+
+
+
+# Glut_014_Glut_038
+
+
+
+```{r}
+Glut_014_Glut_038_seu <- read_rds("../analyses/rds_files/subclustering_Glut_014_Glut_038__seu.rds")
+Glut_014_Glut_038_seu
+```
+
+
+
+```{r}
+expression_matrix <- Glut_014_Glut_038_seu@assays[["RNA"]]@counts
+cell_metadata <- Glut_014_Glut_038_seu@meta.data
+gene_annotation <-  data.frame(gene = rownames(Glut_014_Glut_038_seu)) %>%
+    mutate(gene_short_name = gene) %>%
+    column_to_rownames("gene")
+
+cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+```
+
+
+
+
+
+
+
+```{r fig.height=14, fig.width=14, message=FALSE, warning=FALSE}
+
+set_verbose <- FALSE
+num_neighbours <- 50
+
+my_res <- c(10)
+for (i in seq_along(my_res)) {
+    
+    cds <- preprocess_cds(cds, method = "PCA", 
+                          num_dim = my_res[[i]], 
+                          norm_method = "log", 
+                          use_genes = VariableFeatures(Glut_014_Glut_038_seu)[1:1000], 
+                          verbose = set_verbose
+                          )
+    
+    cds <- align_cds(cds, 
+                     preprocess_method = "PCA", 
+                     alignment_k = num_neighbours, 
+                     alignment_group = "experiment", 
+                     verbose = TRUE
+                     )
+
+    cds <- reduce_dimension(cds, 
+                            max_components = 2,
+                            reduction_method = "UMAP",
+                            umap.n_neighbors = num_neighbours,
+                            cores = 10,
+                            verbose = set_verbose
+                            )
+    
+    p1 <- plot_cells(cds, label_groups_by_cluster = FALSE,  color_cells_by = "RNA_snn_res.2", cell_size = 1) + coord_fixed()
+    p2 <- plot_cells(cds, label_groups_by_cluster = FALSE,  color_cells_by = "experiment", cell_size = 1) + coord_fixed()
+
+    dev_genes <- c("Imp","pdm3","br","dati")
+    p3 <- plot_cells(cds,
+               genes = dev_genes,
+               label_cell_groups = FALSE,
+               show_trajectory_graph = FALSE,
+               cell_size = 0.4) + coord_fixed()
+
+    cds <- cluster_cells(cds, 
+                         reduction_method = "UMAP",
+                         k = num_neighbours,
+                         cluster_method = "louvain",
+                         verbose = set_verbose
+                         )
+    
+    cds <- learn_graph(cds,
+                       use_partition = FALSE,
+                       verbose = set_verbose
+                       )
+    
+    p4 <- plot_cells(cds,
+               color_cells_by = "RNA_snn_res.2",
+               label_cell_groups = FALSE,
+               label_leaves = TRUE,
+               label_branch_points = TRUE,
+               graph_label_size = 1.5,
+               cell_size = 1) + coord_fixed()
+
+    plot((p1 + p2)/(p3 + p4))
+}
+
+```
+
+
+
+```{r}
+cds <- order_cells(cds)
+```
+
+
+```{r}
+write_rds(x = cds, "../analyses/rds_files/subclustering_Glut_014_Glut_038__CDSpseudotime.rds")
+cds <- read_rds("../analyses/rds_files/subclustering_Glut_014_Glut_038__CDSpseudotime.rds")
+cds
+```
+
+
+
+```{r}
+plot_cells(cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           graph_label_size = 1.5,
+           cell_size = 2,
+           rasterize = TRUE) +
+    coord_fixed()
+```
+
+
+
+
+
+
+
+### Sig Genes along pseudotime
+
+
+```{r}
+# write_rds(x = cds, "../analyses/rds_files/subclustering_Glut_014_Glut_038__CDSpseudotime.rds")
+cds <- read_rds("../analyses/rds_files/subclustering_Glut_014_Glut_038__CDSpseudotime.rds")
+cds
+```
+
+
+
+```{r}
+plot_cells(cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           graph_label_size = 1.5,
+           cell_size = 2,
+           rasterize = TRUE) +
+    coord_fixed()
+```
+
+
+```{r}
+modulated_genes <- graph_test(cds, neighbor_graph = "principal_graph", cores = 8)
+```
+
+
+```{r}
+genes <- row.names(subset(modulated_genes, q_value < 1e-50 & morans_I > 0.2)) %>% dplyr::setdiff(iso_genes_remove) 
+genes %>% sort()
+```
+
+
+
+```{r}
+pt.matrix <- exprs(cds)[match(genes,rownames(rowData(cds))),order(pseudotime(cds))]
+pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x, df = 3)$y}))
+pt.matrix <- t(apply(pt.matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(pt.matrix) <- genes
+```
+
+
+```{r}
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2,length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 6),
+  km                           = 10,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+
+#Ward.D2 Hierarchical Clustering
+hthc <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 6),
+  clustering_method_rows       = "ward.D2",
+  clustering_method_columns    = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+```
+
+```{r fig.width=8, fig.height=6}
+print(htkm)
+print(hthc)
+```
+
+
+```{r fig.width=12, fig.height=6}
+print(htkm)
+```
+
+
+
+
+#### sig TFs
+
+```{r}
+genes <- dplyr::intersect(genes, tfs_symbol$gene_symbol)
+genes
+```
+
+
+```{r}
+pt.matrix <- exprs(cds)[match(genes,rownames(rowData(cds))),order(pseudotime(cds))]
+pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x, df = 3)$y}))
+pt.matrix <- t(apply(pt.matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(pt.matrix) <- genes
+```
+
+
+```{r}
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2,length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  km                           = 10,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+
+#Ward.D2 Hierarchical ClusteGlut_014_Glut_038
+hthc <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  clustering_method_rows       = "ward.D2",
+  clustering_method_columns    = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+```
+
+
+
+```{r fig.width=8, fig.height=4}
+print(htkm)
+print(hthc)
+```
+
+
+
+
+
+
+
+# GABA_013_GABA_015_GABA_035
+
+
+```{r}
+GABA_013_GABA_015_GABA_035_seu <- read_rds("../analyses/rds_files/subclustering_GABA_013_GABA_015_GABA_035__seu.rds")
+GABA_013_GABA_015_GABA_035_seu
+```
+
+
+```{r}
+expression_matrix <- GABA_013_GABA_015_GABA_035_seu@assays[["RNA"]]@counts
+cell_metadata <- GABA_013_GABA_015_GABA_035_seu@meta.data
+gene_annotation <-  data.frame(gene = rownames(GABA_013_GABA_015_GABA_035_seu)) %>%
+    mutate(gene_short_name = gene) %>%
+    column_to_rownames("gene")
+
+cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+```
+
+
+
+
+```{r fig.height=14, fig.width=14, message=FALSE, warning=FALSE}
+
+set_verbose <- FALSE
+num_neighbours <- 50
+
+my_res <- c(10)
+for (i in seq_along(my_res)) {
+    
+    cds <- preprocess_cds(cds, method = "PCA", 
+                          num_dim = my_res[[i]], 
+                          norm_method = "log", 
+                          use_genes = VariableFeatures(GABA_013_GABA_015_GABA_035_seu)[1:1000], 
+                          verbose = set_verbose
+                          )
+    
+    cds <- align_cds(cds, 
+                     preprocess_method = "PCA", 
+                     alignment_k = num_neighbours, 
+                     alignment_group = "experiment", 
+                     verbose = TRUE
+                     )
+
+    cds <- reduce_dimension(cds, 
+                            max_components = 2,
+                            reduction_method = "UMAP",
+                            umap.n_neighbors = num_neighbours,
+                            cores = 10,
+                            verbose = set_verbose
+                            )
+    
+    p1 <- plot_cells(cds, label_groups_by_cluster = FALSE,  color_cells_by = "RNA_snn_res.2", cell_size = 1) + coord_fixed()
+    p2 <- plot_cells(cds, label_groups_by_cluster = FALSE,  color_cells_by = "experiment", cell_size = 1) + coord_fixed()
+
+    dev_genes <- c("Imp","pdm3","br","dati")
+    p3 <- plot_cells(cds,
+               genes = dev_genes,
+               label_cell_groups = FALSE,
+               show_trajectory_graph = FALSE,
+               cell_size = 0.4) + coord_fixed()
+
+    cds <- cluster_cells(cds, 
+                         reduction_method = "UMAP",
+                         k = num_neighbours,
+                         cluster_method = "louvain",
+                         verbose = set_verbose
+                         )
+    
+    cds <- learn_graph(cds,
+                       use_partition = FALSE,
+                       verbose = set_verbose
+                       )
+    
+    p4 <- plot_cells(cds,
+               color_cells_by = "RNA_snn_res.2",
+               label_cell_groups = FALSE,
+               label_leaves = TRUE,
+               label_branch_points = TRUE,
+               graph_label_size = 1.5,
+               cell_size = 1) + coord_fixed()
+
+    plot((p1 + p2)/(p3 + p4))
+}
+
+```
+
+
+
+
+
+```{r}
+cds <- order_cells(cds)
+```
+
+
+
+```{r}
+write_rds(x = cds, "../analyses/rds_files/subclustering_GABA_013_GABA_015_GABA_035__CDSpseudotime.rds")
+cds <- read_rds("../analyses/rds_files/subclustering_GABA_013_GABA_015_GABA_035__CDSpseudotime.rds")
+cds
+```
+
+
+
+```{r}
+plot_cells(cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           graph_label_size = 1.5,
+           cell_size = 2,
+           rasterize = TRUE) +
+    coord_fixed()
+```
+
+
+
+
+
+
+### Sig Genes along pseudotime
+
+
+```{r}
+# write_rds(x = cds, "../analyses/rds_files/subclustering_GABA_013_GABA_015_GABA_035__CDSpseudotime.rds")
+cds <- read_rds("../analyses/rds_files/subclustering_GABA_013_GABA_015_GABA_035__CDSpseudotime.rds")
+cds
+```
+
+
+
+```{r}
+plot_cells(cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           graph_label_size = 1.5,
+           cell_size = 2,
+           rasterize = TRUE) +
+    coord_fixed()
+```
+
+
+```{r}
+modulated_genes <- graph_test(cds, neighbor_graph = "principal_graph", cores = 8)
+```
+
+
+```{r}
+genes <- row.names(subset(modulated_genes, q_value < 1e-50 & morans_I > 0.2)) %>% dplyr::setdiff(iso_genes_remove) 
+genes %>% sort()
+```
+
+
+
+```{r}
+pt.matrix <- exprs(cds)[match(genes,rownames(rowData(cds))),order(pseudotime(cds))]
+pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x, df = 3)$y}))
+pt.matrix <- t(apply(pt.matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(pt.matrix) <- genes
+```
+
+
+```{r}
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2,length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 6),
+  km                           = 10,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+
+#Ward.D2 Hierarchical Clustering
+hthc <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 6),
+  clustering_method_rows       = "ward.D2",
+  clustering_method_columns    = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+```
+
+```{r fig.width=8, fig.height=6}
+print(htkm)
+print(hthc)
+```
+
+
+```{r fig.width=12, fig.height=6}
+print(htkm)
+```
+
+
+
+
+#### sig TFs
+
+```{r}
+genes <- dplyr::intersect(genes, tfs_symbol$gene_symbol)
+genes
+```
+
+
+```{r}
+pt.matrix <- exprs(cds)[match(genes,rownames(rowData(cds))),order(pseudotime(cds))]
+pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x, df = 3)$y}))
+pt.matrix <- t(apply(pt.matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(pt.matrix) <- genes
+```
+
+
+```{r}
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2,length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  km                           = 10,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+
+#Ward.D2 Hierarchical ClusteGABA_013_GABA_015_GABA_035
+hthc <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  clustering_method_rows       = "ward.D2",
+  clustering_method_columns    = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+```
+
+
+
+```{r fig.width=8, fig.height=4}
+print(htkm)
+print(hthc)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# GABA_061
+
+
+```{r}
+GABA_061_seu <- read_rds("../analyses/rds_files/subclustering_GABA_061__seu.rds")
+GABA_061_seu
+```
+
+
+
+```{r}
+expression_matrix <- GABA_061_seu@assays[["RNA"]]@counts
+cell_metadata <- GABA_061_seu@meta.data
+gene_annotation <-  data.frame(gene = rownames(GABA_061_seu)) %>%
+    mutate(gene_short_name = gene) %>%
+    column_to_rownames("gene")
+
+cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+```
+
+
+
+```{r fig.height=14, fig.width=14, message=FALSE, warning=FALSE}
+
+set_verbose <- FALSE
+num_neighbours <- 50
+
+my_res <- c(6)
+for (i in seq_along(my_res)) {
+    
+    cds <- preprocess_cds(cds, method = "PCA", 
+                          num_dim = my_res[[i]], 
+                          norm_method = "log", 
+                          use_genes = VariableFeatures(GABA_061_seu),#[1:1000], 
+                          verbose = set_verbose
+                          )
+    
+    cds <- align_cds(cds, 
+                     preprocess_method = "PCA", 
+                     alignment_k = num_neighbours, 
+                     alignment_group = "experiment", 
+                     verbose = TRUE
+                     )
+
+    cds <- reduce_dimension(cds, 
+                            max_components = 2,
+                            reduction_method = "UMAP",
+                            umap.n_neighbors = num_neighbours,
+                            cores = 10,
+                            verbose = set_verbose
+                            )
+    
+    p1 <- plot_cells(cds, label_groups_by_cluster = FALSE,  color_cells_by = "RNA_snn_res.2", cell_size = 1) + coord_fixed()
+    p2 <- plot_cells(cds, label_groups_by_cluster = FALSE,  color_cells_by = "experiment", cell_size = 1) + coord_fixed()
+
+    dev_genes <- c("Imp","pdm3","br","dati")
+    p3 <- plot_cells(cds,
+               genes = dev_genes,
+               label_cell_groups = FALSE,
+               show_trajectory_graph = FALSE,
+               cell_size = 0.4) + coord_fixed()
+
+    cds <- cluster_cells(cds, 
+                         reduction_method = "UMAP",
+                         k = num_neighbours,
+                         cluster_method = "louvain",
+                         verbose = set_verbose
+                         )
+    
+    cds <- learn_graph(cds,
+                       use_partition = FALSE,
+                       verbose = set_verbose
+                       )
+    
+    p4 <- plot_cells(cds,
+               color_cells_by = "RNA_snn_res.2",
+               label_cell_groups = FALSE,
+               label_leaves = TRUE,
+               label_branch_points = TRUE,
+               graph_label_size = 1.5,
+               cell_size = 1) + coord_fixed()
+
+    plot((p1 + p2)/(p3 + p4))
+}
+
+```
+
+
+
+```{r}
+cds <- order_cells(cds)
+```
+
+
+
+
+```{r}
+# write_rds(x = cds, "../analyses/rds_files/subclustering_GABA_061__CDSpseudotime.rds")
+cds <- read_rds("../analyses/rds_files/subclustering_GABA_061__CDSpseudotime.rds")
+cds
+```
+
+
+
+```{r}
+plot_cells(cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           graph_label_size = 1.5,
+           cell_size = 2,
+           rasterize = TRUE) +
+    coord_fixed()
+```
+
+
+
+
+
+
+
+
+
+### Sig Genes along pseudotime
+
+
+```{r}
+# write_rds(x = cds, "../analyses/rds_files/subclustering_GABA_061__CDSpseudotime.rds")
+cds <- read_rds("../analyses/rds_files/subclustering_GABA_061__CDSpseudotime.rds")
+cds
+```
+
+
+
+```{r}
+plot_cells(cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           graph_label_size = 1.5,
+           cell_size = 2,
+           rasterize = TRUE) +
+    coord_fixed()
+```
+
+
+```{r}
+modulated_genes <- graph_test(cds, neighbor_graph = "principal_graph", cores = 8)
+```
+
+
+```{r}
+genes <- row.names(subset(modulated_genes, q_value < 1e-50 & morans_I > 0.2)) %>% dplyr::setdiff(iso_genes_remove) 
+genes %>% sort()
+```
+
+
+
+```{r}
+pt.matrix <- exprs(cds)[match(genes,rownames(rowData(cds))),order(pseudotime(cds))]
+pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x, df = 3)$y}))
+pt.matrix <- t(apply(pt.matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(pt.matrix) <- genes
+```
+
+
+```{r}
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2,length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 6),
+  km                           = 10,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+
+#Ward.D2 Hierarchical Clustering
+hthc <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 6),
+  clustering_method_rows       = "ward.D2",
+  clustering_method_columns    = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+```
+
+```{r fig.width=8, fig.height=6}
+print(htkm)
+print(hthc)
+```
+
+
+```{r fig.width=12, fig.height=6}
+print(htkm)
+```
+
+
+
+
+#### sig TFs
+
+```{r}
+genes <- dplyr::intersect(genes, tfs_symbol$gene_symbol)
+genes
+```
+
+
+```{r}
+pt.matrix <- exprs(cds)[match(genes,rownames(rowData(cds))),order(pseudotime(cds))]
+pt.matrix <- t(apply(pt.matrix,1,function(x){smooth.spline(x, df = 3)$y}))
+pt.matrix <- t(apply(pt.matrix,1,function(x){(x - mean(x))/sd(x)}))
+rownames(pt.matrix) <- genes
+```
+
+
+```{r}
+#K means with 6 groups
+htkm <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2,length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  km                           = 10,
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+
+#Ward.D2 Hierarchical ClusteGABA_061
+hthc <- Heatmap(
+  pt.matrix,
+  name                         = "z-score",
+  col                          = circlize::colorRamp2(seq(from = -2, to = 2, length = 11),rev(brewer.pal(11, "Spectral"))),
+  show_row_names               = TRUE,
+  show_column_names            = FALSE,
+  row_names_gp                 = gpar(fontsize = 12),
+  clustering_method_rows       = "ward.D2",
+  clustering_method_columns    = "ward.D2",
+  row_title_rot                = 0,
+  cluster_rows                 = TRUE,
+  cluster_row_slices           = FALSE,
+  cluster_columns              = FALSE,
+  use_raster = TRUE)
+```
+
+
+
+```{r fig.width=8, fig.height=4}
+print(htkm)
+print(hthc)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
