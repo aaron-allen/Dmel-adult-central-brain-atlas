@@ -35,6 +35,14 @@ These papers investigate transcriptional hetergeneity and sex differences therei
     - modification for this manuscript by Aaron M. Allen
 - `seurat_workflow`: workflow for processing post alignment, predominantly in Seurat.
     - written by Aaron M. Allen
+- `yamls`: yaml files for conda/mamba environments.
+    - `alevin.yaml` - for the `alevin_pipeline`.
+    - `pyscenic_py.yaml` - for the `scenic_pipeline`.
+    - `seurat.yaml` - for the `seurat_workflow` and `general_analyses`.
+    - `solo.yaml` - for running Solo doublet detection script in the `seurat_workflow`.
+
+
+
 
 
 
