@@ -218,13 +218,6 @@ if (parallelize) {
 if (normalization == "LogNormalize") {
     for (i in seq_along(seurat_list_trim)) {
 
-        ### I had been using these ScaleData settings for DoubletFinder, but the clustering looks strange. Will try the
-        ### second ScaleData settings to see how they look.
-
-        # seurat_list_trim[[i]] <- ScaleData(seurat_list_trim[[i]],
-        #                                    use.umi = use_umi,
-        #                                    model.use = test_use)
-
         seurat_list_trim[[i]] <- ScaleData(object = seurat_list_trim[[i]],
                                            assay = "RNA",
                                            features = rownames(seurat_list_trim[[i]]),

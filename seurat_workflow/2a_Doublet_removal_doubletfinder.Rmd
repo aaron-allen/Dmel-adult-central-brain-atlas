@@ -239,22 +239,6 @@ for (i in seq_along(seurat_list_trim)) {
         as.double()
     reuse_pann <- paste0("pANN_0.25_", pk_i, "_", n_exp_poi)
 
-    # seurat_list_trim[[i]] <- my_doubletFinder_v3(seurat_list_trim[[i]],
-    #                              PCs = 1:curr_pc,
-    #                              pN = 0.25,
-    #                              pK = pk_i,
-    #                              nExp = n_exp_poi,
-    #                              reuse.pANN = FALSE,
-    #                              sct = df_sct,
-    #                              reg_vars = setdiff(vars_to_regress, "orig.ident"))
-    # seurat_list_trim[[i]] <- my_doubletFinder_v3(seurat_list_trim[[i]],
-    #                              PCs = 1:curr_pc,
-    #                              pN = 0.25,
-    #                              pK = pk_i,
-    #                              nExp = n_exp_poi_adj,
-    #                              reuse.pANN = reuse_pann,
-    #                              sct = df_sct,
-    #                              reg_vars = setdiff(vars_to_regress, "orig.ident"))
     seurat_list_trim[[i]] <- doubletFinder_v3(seurat_list_trim[[i]],
                                  PCs = 1:curr_pc,
                                  pN = 0.25,

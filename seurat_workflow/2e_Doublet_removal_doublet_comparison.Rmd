@@ -214,38 +214,6 @@ head(scrub_doublets)
 ### Load Solo doublets
 
 
-<!--  very old bit
-Here we read in the `pred.npy` which has the raw predictions output from `solo`. On their [GitHub issue #62](https://github.com/calico/solo/issues/62), they say that the `preds.npy` are raw and need to be recalibrated, which is what the `is_doublet.npy` file is. But in our case the `is_doublet.npy` reports many fewer doublets than we would expect, and the `preds.npy` numbers are in an acceptable range. For now we will load the `preds.npy` instead of the `is_doublet.npy` until we sort this out.
- -->
-
-
-<!-- Old bit of code for loading in the output from the stand alone cli solo. But I've now switched over to using solo inside scvi-tools -->
-<!-- Here we read in the `is_doublet.npy` which has the raw predictions output from `solo`. -->
-<!-- ```{r} -->
-<!-- input_files <- Sys.glob(paste0(doublet_path,"solo/*/is_doublet.npy")) -->
-<!-- solo_doublets <- list() -->
-<!-- if (length(input_files) > 0) { -->
-<!--     for (i in seq_along(input_files)) { -->
-<!--         curr_sample_name <- input_files[[i]] %>% str_remove(paste0(doublet_path,"solo/")) %>% str_remove("/is_doublet.npy") -->
-<!--         cell_ids <- read_tsv(file = paste0(doublet_path,"filtered_inputs/",curr_sample_name,"/barcodes.tsv"),col_names = FALSE) -->
-<!--         doublets <- np$load(file = paste0(doublet_path,"solo/",curr_sample_name,"/is_doublet.npy")) -->
-<!--         # sometimes the solo doublets file is one longer than the data ... don't know why ... -->
-<!--         doublets <- doublets[1:length(cell_ids$X1)] -->
-<!--         solo_doublets[[i]] <- tibble(cell_id = str_c(curr_sample_name, cell_ids$X1, sep = "_") %>% str_remove("-1"), -->
-<!--                                      Solo = doublets) %>% -->
-<!--             mutate(Solo = if_else(Solo == TRUE,"Doublet","Singlet")) %>% -->
-<!--             select(cell_id, Solo) -->
-<!--     } -->
-<!--     solo_doublets <- bind_rows(solo_doublets) -->
-<!-- } else { -->
-<!--     solo_doublets <- data.frame(cell_id = NA, -->
-<!--                                 Solo = NA) -->
-<!-- } -->
-<!-- head(solo_doublets) -->
-<!-- ``` -->
-
-
-
 Read in the `*_solo_doublet_predictions.csv` file.
 
 ```{r}

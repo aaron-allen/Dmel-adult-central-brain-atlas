@@ -180,10 +180,6 @@ if (run_number_4a == 1) {
                              path_modifier, "_",
                              "trimmed_seurat_list.rds")
                 )
-    # for (i in seq_along(seurat_list_trim)) {
-    #     seurat_list_trim[[i]]$orig.ident <- sample_names[[i]]
-    #     names(seurat_list_trim)[[i]] <- sample_names[[i]]
-    # }
     if (user_cells_remove) {
         cells_to_keep <- read_csv(file = user_cells_remove_file) %>% pull(cell_id)
         for (i in seq_along(seurat_list_trim)) {
@@ -203,10 +199,6 @@ if (run_number_4a == 2) {
                          subcluster_celltype, "_",
                          "subclustering.rds")
                      )
-     # for (i in seq_along(seurat_list_trim)) {
-     #     seurat_list_trim[[i]]$orig.ident <- sample_names[[i]]
-     #     names(seurat_list_trim)[[i]] <- sample_names[[i]]
-     # }
      curr_pc <- subcluster_pcs[which(annotation_cell_type == subcluster_celltype)]
      curr_res <- subcluster_res[which(annotation_cell_type == subcluster_celltype)]
 }
@@ -217,93 +209,6 @@ process_time <- stop_the_clock("load_data")
 
 
 
-
-
-<!-- ## Remove PolIII features -->
-
-<!-- 10x Chromium v3 seems to get a lot of PolIII features, which are not useful for downstream analysis. We will remove these features from the Seurat object. -->
-
-<!-- ```{r remove-poliii} -->
-<!-- if (remove_poliii_genes) { -->
-<!--     start_time <- Sys.time() -->
-
-<!--     seurat_list <- list() -->
-<!--     for (i in seq_along(seurat_list_trim)) { -->
-<!--         # print("    Removing rRNA and tRNA genes  ...") -->
-<!--         r_rna_genes <- rownames(seurat_list_trim[[i]]) %>% str_subset(pattern = "rRNA") -->
-<!--         t_rna_genes <- rownames(seurat_list_trim[[i]]) %>% str_subset(pattern = "tRNA:") -->
-
-<!--         counts <- GetAssayData(object = seurat_list_trim[[i]], slot = "counts", assay = "RNA") -->
-<!--         counts <- counts[-(which(rownames(counts) %in% c(r_rna_genes, t_rna_genes))),] -->
-<!--         seurat_list[[i]] <- subset(x = seurat_list_trim[[i]], features = rownames(counts)) -->
-<!--     } -->
-
-<!--     names(seurat_list) <- names(seurat_list_trim) -->
-<!--     # seurat_list -->
-<!--     process_time <- stop_the_clock("remove_poliii") -->
-<!-- } -->
-<!-- ``` -->
-
-
-<!-- ## Trim objects -->
-
-
-<!-- ### Removing outlier cells -->
-
-<!-- ```{r trim-function} -->
-<!-- trim_data <- function(object) { -->
-<!--   data_trim <- object %>% -->
-<!--       subset(subset = nFeature_RNA >= min_genes & -->
-<!--                  nFeature_RNA <= max_genes & -->
-<!--                  nCount_RNA >= min_umi & -->
-<!--                  nCount_RNA <= max_umi & -->
-<!--                  percent_mt < max_mito & -->
-<!--                  percent_rRNA < max_rrna & -->
-<!--                  percent_rProt <= max_rprot & -->
-<!--                  percent_hsp <= max_hsp) -->
-<!--   removed <- dim(object)[2] - dim(data_trim)[2] -->
-<!--   perc_removed <- removed / dim(object)[2] * 100 -->
-<!--   print(paste0("Number of cells removed in ", -->
-<!--                 object@project.name, ": ", -->
-<!--                 removed, " (", -->
-<!--                 round(perc_removed, 2), "% of ", -->
-<!--                 dim(object)[2], ")")) -->
-<!--   return(data_trim) -->
-<!-- } -->
-<!-- ``` -->
-
-<!-- ```{r trim-object} -->
-<!-- start_time <- Sys.time() -->
-<!-- seurat_list_trim <- list() -->
-<!-- for (i in seq_along(seurat_list)) { -->
-<!--     seurat_list_trim[[i]] <- seurat_list[[i]] %>% trim_data -->
-<!-- } -->
-<!-- names(seurat_list_trim) <- names(seurat_list) -->
-<!-- # seurat_list_trim -->
-<!-- process_time <- stop_the_clock("trim_object") -->
-<!-- ``` -->
-
-
-<!-- ### Remove Small Reps -->
-
-<!-- If the number of cells is less than `min_tot_cells`, then the replicate will be removed from later analyses. -->
-
-<!-- ```{r remove-small-reps} -->
-<!-- if (run_number_4a == 1) { -->
-<!--     objs_to_remove <- c() -->
-<!--     for (i in seq_along(seurat_list_trim)) { -->
-<!--         num_cells <- dim(seurat_list_trim[[i]])[2] -->
-<!--         if (num_cells < min_tot_cells) { -->
-<!--             message(paste0("Sample ", names(seurat_list_trim)[[i]], " has ", num_cells, " cells, and will be removed.")) -->
-<!--             objs_to_remove <- c(objs_to_remove, names(seurat_list_trim)[[i]]) -->
-<!--         } -->
-<!--     } -->
-<!--     for (i in seq_along(objs_to_remove)) { -->
-<!--         seurat_list_trim[[objs_to_remove[[i]]]] <- NULL -->
-<!--     } -->
-<!--     seurat_list_trim -->
-<!-- } -->
-<!-- ``` -->
 
 
 
@@ -367,15 +272,8 @@ if (normalization == "SCT") {
 if (normalization == "LogNormalize") {
     print(paste0("Normalization RNA slot"))
     for (i in seq_along(seurat_list_trim)) {
-        # if (parallelize) {
-        #     plan(futures_plan, workers = futures_n_cores)
-        #     options(future.globals.maxSize = futures_ram * 1024 * 1024^2)
-        # }
         print(paste0("Normalizing RNA slot of ", seurat_list_trim[[i]]@project.name))
         seurat_list_trim[[i]] <- NormalizeData(object = seurat_list_trim[[i]], assay = "RNA")
-        # if (parallelize) {
-        #     plan("sequential")
-        # }
     }
 }
 if (normalization == "LogNormalize") {
@@ -384,8 +282,6 @@ if (normalization == "LogNormalize") {
                      seurat_list_trim[[i]]@project.name,
                      " with 'FindVariableFeatures'"))
 
-        # Do we need this bit if we are running SelectIntegrationFeatures below?
-        # If FindVariableFeatures hasn't been run it will just run then....
         seurat_list_trim[[i]] <- FindVariableFeatures(object = seurat_list_trim[[i]],
                                                       selection.method = var_gene_method,
                                                       nfeatures = n_var_features,
@@ -399,65 +295,7 @@ if (normalization == "LogNormalize") {
 process_time <- stop_the_clock("normalize")
 ```
 
-<!-- ## Add Sex Metadata -->
 
-<!-- ```{r sex-meta-data} -->
-<!-- if (insilico_sex) { -->
-<!--     for (i in seq_along(seurat_list_trim)) { -->
-<!--         seurat_list_trim[[i]] <- AddModuleScore(object = seurat_list_trim[[i]], -->
-<!--             features = list(c("lncRNA:roX1", "lncRNA:roX2")), -->
-<!--             name = "modulescore_sex") -->
-<!--         sex_table <- seurat_list_trim[[i]]@meta.data %>% -->
-<!--             rownames_to_column("cell_id") %>% -->
-<!--             select(cell_id, modulescore_sex1) %>% -->
-<!--             mutate(sex = "unknown") %>% -->
-<!--             mutate(sex = if_else(modulescore_sex1 < 0, "female", "male")) -->
-<!--         seurat_list_trim[[i]] <- AddMetaData(object = seurat_list_trim[[i]], -->
-<!--             metadata = sex_table$sex, -->
-<!--             col.name = "sex") -->
-<!--         p1 <- data.frame(ModuleScore = seurat_list_trim[[i]]@meta.data[["modulescore_sex1"]]) %>% -->
-<!--             ggplot(aes(x = ModuleScore)) + -->
-<!--                 geom_histogram(aes(y = 100 * ..count.. / sum(..count..)), -->
-<!--                              fill = "lightsteelblue2", -->
-<!--                              position = "stack", -->
-<!--                              bins = 60, -->
-<!--                              show.legend = FALSE) + -->
-<!--                 geom_vline(xintercept = -0.4) + -->
-<!--                 ylab("Percent") + -->
-<!--                 theme(plot.margin = unit(c(30, 30, 30, 30), "pt")) + -->
-<!--                 ggtitle(names(seurat_list_trim)[[i]]) -->
-<!--         plot(p1) -->
-<!--     } -->
-<!-- } -->
-<!-- if (sample_sex) { -->
-<!--     for (i in seq_along(seurat_list_trim)) { -->
-<!--         sex_table <- seurat_list_trim[[i]]@meta.data %>% -->
-<!--             select(orig.ident) %>% -->
-<!--             rownames_to_column("cell_id") %>% -->
-<!--             mutate(sex = if_else(grepl("fem", orig.ident), "female", "male")) -->
-<!--         seurat_list_trim[[i]] <- AddMetaData(object = seurat_list_trim[[i]], -->
-<!--             metadata = sex_table$sex, -->
-<!--             col.name = "sex") -->
-<!--     } -->
-<!-- } -->
-<!-- ``` -->
-
-
-<!-- ## Add Tissue Metadata -->
-
-<!-- ```{r tissue-meta-data} -->
-<!-- if (multi_tissue) { -->
-<!--     for (i in seq_along(seurat_list_trim)) { -->
-<!--         tissue_table <- seurat_list_trim[[i]]@meta.data %>% -->
-<!--             select(orig.ident) %>% -->
-<!--             rownames_to_column("cell_id") %>% -->
-<!--             mutate(tissue = str_extract(string = orig.ident, pattern = "[^_]+")) -->
-<!--         seurat_list_trim[[i]] <- AddMetaData(object = seurat_list_trim[[i]], -->
-<!--             metadata = tissue_table$tissue, -->
-<!--             col.name = "tissue") -->
-<!--     } -->
-<!-- } -->
-<!-- ``` -->
 
 # Integrate
 
@@ -543,24 +381,6 @@ process_time <- stop_the_clock("integrate_data")
 ```
 
 
-
-<!-- ```{r plot-var-feat, warning = FALSE,message = FALSE} -->
-<!-- start_time <- Sys.time() -->
-<!-- for (i in seq_along(seurat_list_trim)) { -->
-<!--     top_gene <- head(VariableFeatures(seurat_list_trim[[i]]), 20) -->
-<!--     p <- VariableFeaturePlot(object = seurat_list_trim[[i]], -->
-<!--                               selection.method = var_gene_method) -->
-<!--     print(LabelPoints(plot = p, points = top_gene, repel = TRUE) + -->
-<!--             ggtitle(unique(seurat_list_trim[[i]]$orig.ident)) -->
-<!--         ) -->
-<!-- } -->
-<!-- rm(seurat_list_trim) -->
-<!-- invisible(gc()) -->
-<!-- process_time <- stop_the_clock("plot_var_feat") -->
-<!-- ``` -->
-
-
-
 # Run PCA
 
 ```{r scale-data}
@@ -643,18 +463,6 @@ process_time <- stop_the_clock("run_harmony")
 
 ## Plot PCA
 
-
-<!-- getting an error when trying to plot with harmony. Works on local machine but not cluster. Error below: -->
-
-<!--        Quitting from lines 575-586 (parameterized_filter_integrate_cluster.Rmd) -->
-<!--        Error in ElbowPlot(integrated, reduction = set_reduction, ndims = max_pc) : -->
-<!--            No standard deviation info stored for harmony -->
-<!--        Calls: <Anonymous> ... withCallingHandlers -> withVisible -> eval -> eval -> ElbowPlot -->
-<!--        In addition: There were 50 or more warnings (use warnings() to see the first 50) -->
-
-<!-- So plotting the PCAs even if harmony was run.... -->
-<!-- Could also use the `curr_machine == "mentok"` test, or is job `local` and then plot pca vs harmony -->
-<!-- I have also updated Seurat since this error, so it might not be an issue anymore. -->
 
 
 ```{r elbow-plot, fig.width = 12, fig.height = 6}
@@ -787,79 +595,6 @@ integrated@reductions[["umap"]] <- integrated@reductions[[paste0("umap_", curr_p
 process_time <- stop_the_clock("plot_umap")
 ```
 
-
-<!-- ## Add Raw Counts -->
-
-<!-- If the counts have been corrected for ambient RNA contamination, we will now add the _raw_ uncorrected counts as another assay. -->
-
-<!-- ```{r add-raw-data} -->
-<!-- start_time <- Sys.time() -->
-<!-- if (remove_ambient) { -->
-<!--     seurat_list_trim_raw <- read_rds(file = paste0(objects_path, -->
-<!--                                  dataset, "_", -->
-<!--                                  input_type, "_", -->
-<!--                                  "trimmed_seurat_list.rds") -->
-<!--                     ) -->
-<!--     if (length(seurat_list_trim_raw) > 1) { -->
-<!--         integrated_raw <- merge(seurat_list_trim_raw[[1]], -->
-<!--                                 unlist(seurat_list_trim_raw[2:length(seurat_list_trim_raw)]), -->
-<!--                                 merge.data = TRUE) -->
-<!--     } else { -->
-<!--         integrated_raw <- seurat_list_trim_raw[[1]] -->
-<!--     } -->
-<!--     clean_cells <- colnames(integrated) -->
-<!--     integrated_raw_sub <- subset(x = integrated_raw, cells = clean_cells) -->
-<!--     integrated[["Raw"]] <- CreateAssayObject(counts = integrated_raw_sub@assays[["RNA"]]@counts) -->
-
-<!--     if (parallelize) { -->
-<!--         plan(futures_plan, workers = futures_n_cores) -->
-<!--         options(future.globals.maxSize = futures_ram * 1024 * 1024^2) -->
-<!--     } -->
-<!--     integrated <- NormalizeData(object = integrated, assay = "Raw") -->
-<!--     if (parallelize) { -->
-<!--         plan("sequential") -->
-<!--     } -->
-
-<!--     integrated -->
-<!--     rm(seurat_list_trim_raw, integrated_raw, integrated_raw_sub) -->
-<!--     gc() -->
-<!-- } -->
-<!-- process_time <- stop_the_clock("add_raw_data") -->
-<!-- ``` -->
-
-
-
-<!-- ## Add Doublet Predictions -->
-
-<!-- ```{r fig.width = 10, fig.height = 10} -->
-<!-- if (remove_doublets) { -->
-<!--     doublet_file <- paste0(doublet_path, -->
-<!--                            dataset, "_", -->
-<!--                            input_type, "_", -->
-<!--                            "allcells_by_method.csv") -->
-<!--     if (file.exists(doublet_file)) { -->
-<!--         doublets <- integrated@meta.data %>% -->
-<!--             rownames_to_column("cell_id") %>% -->
-<!--             select(cell_id) %>% -->
-<!--             left_join(read_csv(file = doublet_file)) -->
-<!--         integrated <- AddMetaData(object = integrated, metadata = doublets$DoubletFinder, col.name = "DoubletFinder") -->
-<!--         integrated <- AddMetaData(object = integrated, metadata = doublets$Scrublet, col.name = "Scrublet") -->
-<!--         integrated <- AddMetaData(object = integrated, metadata = doublets$Solo, col.name = "Solo") -->
-<!--         for (gene in c("DoubletFinder", "Scrublet", "Solo")) { -->
-<!--             p1 <- DimPlot(object = integrated, -->
-<!--                         group.by = gene, -->
-<!--                         pt.size = 0.1, -->
-<!--                         cols = c("black", "lightsteelblue2"), -->
-<!--                         reduction = "umap", -->
-<!--                         order = TRUE, -->
-<!--                         raster = FALSE) + -->
-!--                     NoAxes() + -->
-<!--                     coord_fixed() -->
-<!--             print(p1) -->
-<!--         } -->
-<!--     } -->
-<!-- } -->
-<!-- ``` -->
 
 
 ## Save integrated data

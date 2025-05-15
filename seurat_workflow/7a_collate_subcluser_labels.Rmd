@@ -327,8 +327,6 @@ paste0(objects_path,
                       ".rds")
 ```
 
-New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds
-New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed.rds
 
 
 ```{r save-data}

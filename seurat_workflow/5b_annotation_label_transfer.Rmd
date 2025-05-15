@@ -233,30 +233,6 @@ DimPlot(object = reference_object,
 ## PCA project RNA assay
 
 
-
-<!-- Run a quick `NormalizeData`/`ScaleData`/`RunPCA`, since this object was scraped from a loom file. -->
-
-<!-- ```{r quick_norm} -->
-<!-- start_time <- Sys.time() -->
-<!-- Idents(reference_object) <- reference_object$cell_type -->
-<!-- reference_object <- NormalizeData(reference_object, -->
-<!--                             normalization.method = "LogNormalize", -->
-<!--                             scale.factor = 10000) -->
-<!-- reference_object <- FindVariableFeatures(object = reference_object, -->
-<!--                                           selection.method = var_gene_method, -->
-<!--                                           nfeatures = n_var_features, -->
-<!--                                           mean.cutoff = c(min_mean_cutoff,max_mean_cutoff), -->
-<!--                                           dispersion.cutoff = c(min_dispersion_cutoff,max_dispersion_cutoff) -->
-<!--                                           ) -->
-<!-- reference_object <- reference_object <- ScaleData(object = reference_object, -->
-<!--                                                 assay = "RNA", -->
-<!--                                                 features = rownames(reference_object)) -->
-<!-- reference_object <- RunPCA(object = reference_object, features = reference_object@assays$RNA@var.features, npcs = curr_pc) -->
-<!-- process_time <- stop_the_clock("quick_norm") -->
-<!-- ``` -->
-
-
-
 ```{r find-anchors}
 start_time <- Sys.time()
 allgenes <- rownames(integrated@assays$RNA)

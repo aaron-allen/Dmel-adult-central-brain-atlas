@@ -445,7 +445,7 @@ process_time <- stop_the_clock("extract_module_scores")
 ```{r annotate-by-cell}
 start_time <- Sys.time()
 annotation_broad_df <- module_score_df %>%
-  select(annotation_cell_type)
+    select(annotation_cell_type)
 top_annotation_broad <- colnames(annotation_broad_df)[max.col(annotation_broad_df, ties.method = "first")]
 my_colnames <- colnames(annotation_broad_df)
 annotation_broad_df <- annotation_broad_df %>%

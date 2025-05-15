@@ -1,20 +1,84 @@
 ---
-title: "Untitled"
-output: html_document
-date: "2025-03-20"
+title: "6a_manual_split_and_save"
+description: description
+author: "Aaron M. Allen"
+date: 'Last update: `r date()`'
+output:
+  html_document:
+    number_sections: true
+    code_folding: show
+    code_download: true
+    theme: cerulean
+    df_print: paged
+    fig_width: 8.5
+    fig_height: 5
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 6
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+
+
+```{css, echo = FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+.tocify-item {white-space:pre}
 ```
 
 
 
+```{r echo = FALSE, cache = FALSE}
+
+```
+
+
+```{r setup, echo = FALSE, cache = FALSE}
+ggplot2::theme_set(ggplot2::theme_grey())
+ggplot2::theme_update(panel.background = ggplot2::element_rect(fill = "transparent", colour = NA),
+                      plot.background = ggplot2::element_rect(fill = "transparent", colour = NA))
+
+rmd_name <- gsub(pattern = ".Rmd", replacement = "", x = knitr::current_input(), ignore.case = TRUE)
+knitr::opts_chunk$set(
+    # dev = c("cairo_pdf"),
+    dev = c("png", "cairo_pdf"),
+    dev.args=list(bg="transparent"),
+    fig.align = "center",
+    fig.height = 5,
+    fig.width = 8.5,
+    dpi = 100,
+    pdf.options(encoding = "ISOLatin9.enc"),
+    fig.path = paste0("../analyses/figures/", rmd_name, "-",
+                    format(Sys.time(), "%Y%m%d_%H%M%S"), "/"),
+    fig.retina = 1,
+    warning = TRUE,
+    message = TRUE)
+```
 
 
 
+# Setup
 
 
+## Start time
+
+```{r start-time}
+set.seed(12021)
+today <- format(Sys.time(), "%Y%m%d_%H%M%S")
+total_start_time <- Sys.time()
+total_start_time
+```
+
+
+
+## Libraries
+
+```{r packages-etc, warning = FALSE, message = FALSE}
+library(Seurat)
+library(tidyverse)
+library(colorspace)
+library(cowplot)
+```
 
 
 
@@ -27,6 +91,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Load data
 
+
+
+```{r load-meta-brain}
+meta_cb <- read_rds("../../proj136/analyses/rds_files/New_Meta_cbNeuron_PUBnofacs_noPolIII_v1_alevin_LogNormalize_harmony_integrated_seurat_doublets_removed_diet.rds")
+meta_cb
+```
 
 
 
@@ -104,6 +174,17 @@ list.files(path = "../../proj136/analyses/rds_files/", pattern = "New_Meta_cbNeu
 
 
 
+
+
+
+
+
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
 
 
 
