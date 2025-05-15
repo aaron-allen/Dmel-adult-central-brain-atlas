@@ -1,0 +1,32 @@
+
+input: 0 # 0 means current direcotry, 1 means fastq files are in data.dir in cwd , or a specific path to fastqs
+fastq_lanes: multiple  # either single or multiple
+working_dir: /path/to/directory # "directory path for main working directory"
+figures_dir: figures_dir # directory name for saving figures
+
+alevin:
+    conda_env: alevin
+    index: /path/to/index
+    rna_memory: "10G"
+    threads: 12
+    library_type: ISR
+    tgmap: /path/to/tgmap
+    options: --chromiumV3 --dumpFeatures --dumpMtx --keepCBFraction 1  --maxNumBarcodes 737000  --freqThreshold 0 --noWhitelist
+
+R_path: /stopgap/cncb/proj024/src/alevin_gex_allcb/R
+
+emptydrops:
+    conda_env: alevin
+    filter_fdr: 0.001 # FDR filter for removal of barcodes with no cells
+    filter_empty: 1 # Yes (1) or No(0) , should barcodes estimated to have no cells be removed from the output object
+    filter_genes: 1 # Yes (1) or No (0), Default (0)   should rRNA, rProt, mito and hsp genes be filtered out from the counts matrix before running empty drops
+    plot_empty_pval: 1 # Yes (1) or No(0) , should distribution of p-values fro assumed empty droplets be plotted
+    lower: 100  # A numeric scalar specifying the lower bound on the total UMI count, at or below which all barcodes are assumed to correspond to empty droplets
+    niters: 10000 # An integer scalar specifying the number of iterations to use for the Monte Carlo p-value calculations
+    test_ambient: 0 # Yes (1) or No(0) A logical scalar indicating whether results should be returned for barcodes with totals less than or equal to lower
+    ignore: 0  # A numeric scalar specifying the lower bound on the total UMI count, at or below which barcodes will be ignored.0 means Null
+    retain: 0 #A numeric scalar specifying the threshold for the total UMI count above which all barcodes are assumed to contain cells . 0 means NULL
+    barcode_plot_function: Alevin_dropletBarcodePlot.R
+    memory: "4G"
+    cores: 5 # Number of cores to rquest for the job
+    rcores: 4 # Number of coreas used by R for parallelization. This should always be lesser than the total coress asked for , so that job doesnt crash

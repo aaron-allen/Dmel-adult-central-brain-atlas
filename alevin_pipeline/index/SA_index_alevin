@@ -1,0 +1,11 @@
+commands for SA index
+
+grep "^>" <(gunzip -c dmel-all-chromosome-r6.30.fasta.gz) | cut -d " " -f 1 > decoys.txt
+
+sed -i.bak -e 's/>//g' decoys.txt
+cat Dmel-all-RNA-r6.30.fasta.gz  dmel-all-chromosome-r6.30.fasta.gz > dmel-gentrome-r6.30.fa.gz
+ conda activate renv_4.0.5
+ Rscript transcripttogenemap.R 
+salmon index -t ./dmel-gentrome-r6.30.fa.gz  -d decoys.txt -p 8 -i dmel_all_r6.30_salmon_index 
+
+
